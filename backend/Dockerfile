@@ -3,6 +3,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# OpenSSL requis par Prisma sur Alpine
+RUN apk add --no-cache openssl
+
 # Dépendances uniquement (cache Docker layer)
 COPY package*.json ./
 COPY prisma ./prisma/
@@ -22,6 +25,9 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+
+# OpenSSL requis par Prisma sur Alpine
+RUN apk add --no-cache openssl
 
 # Seules les prod dependencies + client Prisma généré
 COPY package*.json ./
