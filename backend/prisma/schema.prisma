@@ -1,0 +1,158 @@
+// SmartHunt Backend — Prisma Schema (PostgreSQL)
+// npx prisma generate  →  génère le client TypeScript
+// npx prisma migrate dev --name init  →  applique en dev
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enseigne ───────────────────────────────────────────────────────────────
+
+model Store {
+  id        String       @id          // ex: "carrefour", "leclerc"
+  name      String
+  color     String                    // hex brand color
+  lat       Float
+  lng       Float
+  prices    StorePrice[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@map("stores")
+}
+
+// ─── Groupe produit (générique) ──────────────────────────────────────────────
+
+model ProductGroup {
+  id             String           @id        // ex: "yaourt-nature"
+  genericName    String
+  emoji          String
+  imageUrl       String?
+  categorySlug   String                      // ex: "frais"
+  subcategorySlug String                     // ex: "produits-laitiers"
+  equivalenceKey String                      // ex: "YAOURT_NATURE_125G"
+  unitSize       Float                       // ex: 0.125  (125 g)
+  unitType       String                      // "kg" | "L" | "unit"
+  variants       ProductVariant[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([categorySlug])
+  @@index([subcategorySlug])
+  @@map("product_groups")
+}
+
+// ─── Variante produit (MDD / Leader / Bio) ───────────────────────────────────
+
+model ProductVariant {
+  id           String      @id @default(cuid())
+  ean          String      @unique
+  segment      String                         // "mdd" | "leader" | "bio"
+  brand        String
+  name         String
+  imageUrl     String?
+  basePrice    Float                          // prix de référence national (sans promo)
+  pricePerUnit Float                          // €/kg ou €/L = basePrice / unitSize
+  unitRef      String                         // "kg" | "L" | "unit"
+
+  group        ProductGroup    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId      String
+
+  prices       StorePrice[]
+  promos       CataloguePromo[]
+  cashbacks    VariantCashback[]
+
+  lastVerified DateTime    @default(now())
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([groupId])
+  @@index([ean])
+  @@map("product_variants")
+}
+
+// ─── Prix en enseigne ────────────────────────────────────────────────────────
+
+model StorePrice {
+  id        String          @id @default(cuid())
+  price     Float
+  inStock   Boolean         @default(true)
+
+  variant   ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  variantId String
+
+  store     Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeId   String
+
+  updatedAt DateTime        @updatedAt
+
+  @@unique([variantId, storeId])
+  @@index([storeId])
+  @@map("store_prices")
+}
+
+// ─── Promo catalogue (pourcentage, volume, immédiate) ───────────────────────
+
+model CataloguePromo {
+  id         String          @id @default(cuid())
+  type       String                      // "percent" | "volume" | "immediate"
+  value      Float
+  minQty     Int?
+  label      String
+  store      String          @default("all")  // "all" ou storeId
+  validUntil DateTime?
+
+  variant    ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  variantId  String
+
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@index([variantId])
+  @@map("catalogue_promos")
+}
+
+// ─── Cashback statique app (Shopmium intégré, Quoty, etc.) ──────────────────
+
+model VariantCashback {
+  id        String          @id @default(cuid())
+  app       String                      // "shopmium" | "quoty" | "coupon_network"
+  amount    Float
+  label     String
+
+  variant   ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  variantId String
+
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([variantId])
+  @@map("variant_cashbacks")
+}
+
+// ─── Offre ODR externe (Shopmium, Quoty, Coupon Network) ─────────────────────
+
+model CashbackOffer {
+  id              String    @id
+  provider        String    // "shopmium" | "quoty" | "coupon_network"
+  label           String
+  amount          Float
+  eanList         String[]
+  minQty          Int       @default(1)
+  validUntil      DateTime
+  deeplinkIos     String?
+  deeplinkAndroid String?
+  active          Boolean   @default(true)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([provider])
+  @@index([validUntil])
+  @@map("cashback_offers")
+}

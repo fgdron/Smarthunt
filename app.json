@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "SmartHunt",
+    "slug": "smarthunt",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "smarthunt",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0A0F"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.smarthunt.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "SmartHunt utilise la caméra pour scanner vos tickets de caisse et confirmer vos achats.",
+        "NSPhotoLibraryUsageDescription": "SmartHunt accède à vos photos pour importer des tickets de caisse."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A0F"
+      },
+      "package": "com.smarthunt.app",
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-camera",
+      "expo-image-picker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

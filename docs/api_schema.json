@@ -1,0 +1,265 @@
+{
+  "_comment": "SmartHunt — Schémas JSON des objets API (réponses du backend mobile)",
+
+  "Product": {
+    "_description": "Fiche produit enrichie — réponse de GET /products/:ean",
+    "ean": "3045320094084",
+    "name": "Nutella Pâte à tartiner",
+    "brand": "Ferrero",
+    "unit_label": "825g",
+    "segment": "national",
+    "is_top350": false,
+    "category": {
+      "id": 3,
+      "slug": "epicerie-sucree",
+      "label": "Épicerie sucrée",
+      "icon_emoji": "🍬",
+      "parent": {
+        "id": 1,
+        "slug": "epicerie",
+        "label": "Épicerie"
+      }
+    },
+    "bio_alternative": {
+      "ean": "3760020507357",
+      "name": "Pâte à tartiner Bio Noisettes Chocolat",
+      "brand": "Bio Village",
+      "unit_label": "750g",
+      "segment": "bio",
+      "price_context": {
+        "_comment": "Pré-calculé pour le badge Switch Bio",
+        "base_price": 4.49,
+        "final_price": 4.49,
+        "delta_vs_conventional_final": "+2.54"
+      }
+    },
+    "image_url": "https://cdn.smarthunt.app/products/3045320094084.jpg"
+  },
+
+  "StorePrice": {
+    "_description": "Prix d'un produit dans une enseigne — Layer 1",
+    "ean": "3045320094084",
+    "store": {
+      "id": 1,
+      "slug": "leclerc",
+      "name": "E.Leclerc",
+      "color": "#0055A4"
+    },
+    "base_price": 5.99,
+    "in_stock": true,
+    "scraped_at": "2026-04-21T06:00:00Z"
+  },
+
+  "CataloguePromo": {
+    "_description": "Promotion catalogue — Layer 2A",
+    "id": 1042,
+    "ean": "3045320094084",
+    "store": {
+      "id": 1,
+      "slug": "leclerc",
+      "name": "E.Leclerc"
+    },
+    "promo_type": "percent",
+    "promo_value": 34,
+    "promo_label": "-34% immédiat",
+    "base_price": 5.99,
+    "promo_price": 3.95,
+    "valid_from": "2026-04-21",
+    "valid_until": "2026-04-27",
+    "source": "tiendeo"
+  },
+
+  "CashbackOffer": {
+    "_description": "Offre de remboursement numérique — Layer 2B",
+    "id": 88,
+    "ean": "3045320094084",
+    "partner": "shopmium",
+    "cashback_amount": 2.00,
+    "cashback_type": "scan_ticket",
+    "deeplink_ios": "shopmium://offer/nutella-825g-abc123",
+    "deeplink_android": "shopmium://offer/nutella-825g-abc123",
+    "store_ids": null,
+    "min_purchase_qty": 1,
+    "valid_from": "2026-04-01",
+    "valid_until": "2026-05-15",
+    "is_exclusive": false
+  },
+
+  "Optimization": {
+    "_description": "Résultat du moteur de matching — Layer 3. Objet central affiché dans l'app.",
+    "id": 512,
+    "product": {
+      "ean": "3045320094084",
+      "name": "Nutella Pâte à tartiner",
+      "brand": "Ferrero",
+      "unit_label": "825g",
+      "segment": "national",
+      "category_slug": "epicerie-sucree",
+      "image_url": "https://cdn.smarthunt.app/products/3045320094084.jpg"
+    },
+    "store": {
+      "id": 1,
+      "slug": "leclerc",
+      "name": "E.Leclerc",
+      "color": "#0055A4"
+    },
+    "catalogue_promo": {
+      "id": 1042,
+      "promo_label": "-34% immédiat",
+      "promo_price": 3.95,
+      "valid_until": "2026-04-27"
+    },
+    "cashback_offer": {
+      "id": 88,
+      "partner": "shopmium",
+      "cashback_amount": 2.00,
+      "deeplink_ios": "shopmium://offer/nutella-825g-abc123",
+      "valid_until": "2026-05-15"
+    },
+    "prices": {
+      "base_price": 5.99,
+      "promo_price": 3.95,
+      "final_price": 1.95,
+      "savings_amount": 4.04,
+      "savings_percent": 67
+    },
+    "flags": {
+      "is_cumul_max": true,
+      "is_nearly_free": false,
+      "expires_soon": false
+    },
+    "valid_until": "2026-04-27",
+    "computed_at": "2026-04-21T06:15:00Z"
+  },
+
+  "BasketStoreComparison": {
+    "_description": "Comparaison du coût total du panier par enseigne — mis à jour en temps réel",
+    "basket_id": 77,
+    "computed_at": "2026-04-21T10:30:00Z",
+    "scenarios": {
+      "mono_store": {
+        "_comment": "Meilleure enseigne unique pour le panier complet",
+        "recommended_store": {
+          "id": 2,
+          "slug": "carrefour",
+          "name": "Carrefour"
+        },
+        "total_base": 87.40,
+        "total_promo": 62.10,
+        "total_cashback": 14.50,
+        "total_final": 47.60,
+        "savings_vs_base": 39.80,
+        "items_available": 18,
+        "items_total": 20
+      },
+      "multi_store": {
+        "_comment": "Répartition optimale entre plusieurs enseignes (max économies)",
+        "total_final": 41.20,
+        "savings_vs_base": 46.20,
+        "savings_vs_mono": 6.40,
+        "stores": [
+          {
+            "store": { "id": 1, "slug": "leclerc", "name": "E.Leclerc" },
+            "items_count": 11,
+            "subtotal_final": 24.30,
+            "items": ["3045320094084", "8000500310427", "7613036018838"]
+          },
+          {
+            "store": { "id": 3, "slug": "intermarche", "name": "Intermarché" },
+            "items_count": 9,
+            "subtotal_final": 16.90,
+            "items": ["3017620425035", "5000112637441"]
+          }
+        ]
+      }
+    },
+    "all_stores": [
+      {
+        "store": { "id": 1, "slug": "leclerc", "name": "E.Leclerc" },
+        "total_base": 87.40,
+        "total_promo": 63.20,
+        "total_cashback": 12.80,
+        "total_final": 50.40,
+        "items_available": 20
+      },
+      {
+        "store": { "id": 2, "slug": "carrefour", "name": "Carrefour" },
+        "total_base": 89.10,
+        "total_promo": 62.10,
+        "total_cashback": 14.50,
+        "total_final": 47.60,
+        "items_available": 18
+      },
+      {
+        "store": { "id": 3, "slug": "intermarche", "name": "Intermarché" },
+        "total_base": 85.90,
+        "total_promo": 65.40,
+        "total_cashback": 11.20,
+        "total_final": 54.20,
+        "items_available": 19
+      }
+    ]
+  },
+
+  "ReceiptScanResult": {
+    "_description": "Résultat OCR après scan du ticket de caisse",
+    "receipt_id": 301,
+    "basket_id": 77,
+    "store": { "id": 2, "slug": "carrefour", "name": "Carrefour" },
+    "ocr_status": "done",
+    "total_detected": 62.10,
+    "line_items": [
+      {
+        "name_raw": "NUTELLA 825G",
+        "price_raw": 3.95,
+        "ean": "3045320094084",
+        "matched": true,
+        "cashback_unlocked": {
+          "partner": "shopmium",
+          "amount": 2.00
+        }
+      },
+      {
+        "name_raw": "BARILLA SPAG N5 500G",
+        "price_raw": 1.07,
+        "ean": "8000500310427",
+        "matched": true,
+        "cashback_unlocked": {
+          "partner": "shopmium",
+          "amount": 0.80
+        }
+      },
+      {
+        "name_raw": "EVIAN 6X1L",
+        "price_raw": 3.49,
+        "ean": null,
+        "matched": false,
+        "cashback_unlocked": null
+      }
+    ],
+    "summary": {
+      "total_cashback_unlocked": 2.80,
+      "items_matched": 2,
+      "items_total": 3
+    }
+  },
+
+  "CommunityReport": {
+    "_description": "Signalement anti-gaspi collaboratif",
+    "id": "r-001",
+    "store_location": {
+      "id": 12,
+      "store_slug": "leclerc",
+      "name": "Leclerc Nantes Nord",
+      "lat": 47.2588,
+      "lng": -1.5001
+    },
+    "discount_pct": 50,
+    "description": "Bac anti-gaspi : pains spéciaux, fromages, charcuterie",
+    "photo_url": "https://cdn.smarthunt.app/reports/r-001.jpg",
+    "upvotes": 47,
+    "expires_at": "2026-04-22T20:00:00Z",
+    "reported_at": "2026-04-21T08:32:00Z",
+    "distance_km": 1.2
+  }
+}

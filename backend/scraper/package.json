@@ -1,0 +1,16 @@
+{
+  "name": "smarthunt-scraper",
+  "version": "1.0.0",
+  "description": "Bridge d'ingestion initiale + scraper futur",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bridge": "tsx src/bridge.ts",
+    "bridge:prod": "API_URL=$API_URL INTERNAL_API_KEY=$INTERNAL_API_KEY tsx src/bridge.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.2",
+    "tsx":         "^4.15.7",
+    "typescript":  "^5.4.5"
+  }
+}

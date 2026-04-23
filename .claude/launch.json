@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "theme-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [".claude/server.js"],
+      "port": 3333,
+      "autoPort": true
+    }
+  ]
+}
