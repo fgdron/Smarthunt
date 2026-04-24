@@ -69,6 +69,11 @@ async function buildApp(): Promise<FastifyInstance> {
     timeWindow: '1 minute',
   });
 
+  // ── Diagnostic env vars ───────────────────────────────────────────────────
+  app.log.info(`ENV CHECK — INTERNAL_API_KEY: ${process.env.INTERNAL_API_KEY ? 'SET ✓' : 'NOT SET ✗'}`);
+  app.log.info(`ENV CHECK — NODE_ENV: ${process.env.NODE_ENV}`);
+  app.log.info(`ENV CHECK — PORT: ${process.env.PORT}`);
+
   // ── Routes ────────────────────────────────────────────────────────────────
   await app.register(productsRoutes);
   await app.register(offersRoutes);
