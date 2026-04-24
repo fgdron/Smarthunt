@@ -14,6 +14,7 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 
 import { productsRoutes } from './routes/products.js';
@@ -40,8 +41,16 @@ async function buildApp(): Promise<FastifyInstance> {
     },
   });
 
-  // ── Prisma ───────────────────────────────────────────────────────────────
-  const prisma = new PrismaClient({
+  // ── Prisma (via pg driver adapter — no native binary) ────────────────────
+  const pool   = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DATABASE_URL?.includes('sslmode=require') || process.env.NODE_ENV === 'production'
+      ? { rejectUnauthorized: false }
+      : undefined,
+  });
+  const adapter = new PrismaPg(pool);
+  const prisma  = new PrismaClient({
+    adapter,
     log: process.env.NODE_ENV === 'development' ? ['query', 'warn', 'error'] : ['warn', 'error'],
   });
 
@@ -50,6 +59,7 @@ async function buildApp(): Promise<FastifyInstance> {
   // Nettoyage propre au shutdown
   app.addHook('onClose', async () => {
     await prisma.$disconnect();
+    await pool.end();
   });
 
   // ── Plugins ───────────────────────────────────────────────────────────────
