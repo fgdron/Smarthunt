@@ -26,7 +26,7 @@ const DB_PATH = path.resolve(__dirname, '../../../data/productsDB.ts');
 
 const API_URL        = process.env.API_URL        ?? 'http://localhost:3000';
 const INTERNAL_KEY   = process.env.INTERNAL_API_KEY;
-const BATCH_SIZE     = 50; // groupes par requête (évite les payloads > 1 Mo)
+const BATCH_SIZE     = 5; // groupes par requête — petits batches pour éviter les timeouts
 
 if (!INTERNAL_KEY) {
   console.error('❌  INTERNAL_API_KEY manquante.');

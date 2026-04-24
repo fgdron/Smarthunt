@@ -115,8 +115,7 @@ export async function internalRoutes(app: FastifyInstance) {
     let upsertedVariants = 0;
     let upsertedPrices   = 0;
 
-    try { await app.prisma.$transaction(async (tx) => {
-      for (const group of products) {
+    try { for (const group of products) { await app.prisma.$transaction(async (tx) => {
         // 1. Upsert groupe produit
         await tx.productGroup.upsert({
           where:  { id: group.groupId },
@@ -213,8 +212,7 @@ export async function internalRoutes(app: FastifyInstance) {
             });
           }
         }
-      }
-    }); } catch (err) {
+    }); } } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       request.log.error({ err }, 'update-prices transaction failed');
       return reply.status(500).send({ error: 'Transaction failed', details: msg });
