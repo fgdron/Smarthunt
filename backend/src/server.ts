@@ -14,6 +14,7 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { PrismaClient } from '@prisma/client';
+import { Pool } from 'pg';
 
 import { productsRoutes } from './routes/products.js';
 import { offersRoutes }   from './routes/offers.js';
@@ -86,6 +87,37 @@ async function buildApp(): Promise<FastifyInstance> {
     timestamp: new Date().toISOString(),
     version:   '2.0.0',
   }));
+
+  // ── Diagnostic : env vars présentes ─────────────────────────────────────
+  app.get('/v1/debug-env', async () => {
+    const dbUrl = process.env.DATABASE_URL;
+    return {
+      INTERNAL_API_KEY: process.env.INTERNAL_API_KEY ? 'SET' : 'NOT SET',
+      NODE_ENV:         process.env.NODE_ENV ?? 'NOT SET',
+      PORT:             process.env.PORT ?? 'NOT SET',
+      DATABASE_URL:     dbUrl
+        ? `SET (starts: ${dbUrl.substring(0, 20)}…)`
+        : 'NOT SET',
+      allKeys: Object.keys(process.env).sort(),
+    };
+  });
+
+  // ── Diagnostic : connexion PostgreSQL pure JS (sans Prisma) ─────────────
+  app.get('/v1/test-pg', async (_req, reply) => {
+    const dbUrl = process.env.DATABASE_URL;
+    if (!dbUrl) {
+      return reply.status(500).send({ error: 'DATABASE_URL not set in process.env' });
+    }
+    const pool = new Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
+    try {
+      const result = await pool.query('SELECT NOW() AS now, current_database() AS db');
+      return { ok: true, row: result.rows[0] };
+    } catch (err) {
+      return reply.status(500).send({ error: String(err) });
+    } finally {
+      await pool.end();
+    }
+  });
 
   return app;
 }
