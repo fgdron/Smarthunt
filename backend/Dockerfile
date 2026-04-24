@@ -6,7 +6,7 @@ RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends openssl libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Installe TOUTES les dépendances (dev inclus) pour le build
+# Installe toutes les dépendances (dev inclus) pour le build
 COPY package*.json ./
 COPY prisma ./prisma/
 RUN npm ci
@@ -17,9 +17,9 @@ COPY tsconfig.json ./
 COPY src ./src/
 RUN npm run build
 
-# Passe en mode production après le build
 ENV NODE_ENV=production
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/server.js"]
+# prisma db push lancé au runtime via le script start
+CMD ["node", "dist/server.js"]
