@@ -42,4 +42,4 @@ COPY prisma ./prisma/
 EXPOSE 3000
 
 # Lance les migrations puis démarre le serveur
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/server.js"]
