@@ -100,6 +100,17 @@ const UpdateOffersBodySchema = z.object({
 export async function internalRoutes(app: FastifyInstance) {
   requireInternalKey(app);
 
+  // ── GET /v1/internal/ping-db — test connexion Prisma ────────────────────────
+  app.get('/v1/internal/ping-db', async (_request, reply) => {
+    try {
+      const stores   = await app.prisma.store.count();
+      const groups   = await app.prisma.productGroup.count();
+      return reply.send({ ok: true, stores, groups });
+    } catch (err) {
+      return reply.status(500).send({ error: String(err) });
+    }
+  });
+
   // ── POST /v1/internal/update-prices ─────────────────────────────────────────
   app.post('/v1/internal/update-prices', async (request, reply) => {
     const parseResult = UpdatePricesBodySchema.safeParse(request.body);
