@@ -156,9 +156,9 @@ export async function internalRoutes(app: FastifyInstance) {
           // 2. Upsert variante
           const variantRes = await client.query<{ id: string }>(
             `INSERT INTO product_variants
-               (ean, segment, brand, name, "imageUrl", "basePrice", "pricePerUnit",
+               (id, ean, segment, brand, name, "imageUrl", "basePrice", "pricePerUnit",
                 "unitRef", "groupId", "lastVerified", "createdAt", "updatedAt")
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW(),NOW())
+             VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW(),NOW())
              ON CONFLICT (ean) DO UPDATE SET
                brand          = EXCLUDED.brand,
                name           = EXCLUDED.name,
@@ -179,8 +179,8 @@ export async function internalRoutes(app: FastifyInstance) {
           for (const [storeId, price] of Object.entries(variant.prices)) {
             const inStock = variant.in_stock?.[storeId] !== false;
             await client.query(
-              `INSERT INTO store_prices ("variantId", "storeId", price, "inStock", "updatedAt")
-               VALUES ($1,$2,$3,$4,NOW())
+              `INSERT INTO store_prices (id, "variantId", "storeId", price, "inStock", "updatedAt")
+               VALUES (gen_random_uuid()::text,$1,$2,$3,$4,NOW())
                ON CONFLICT ("variantId", "storeId") DO UPDATE SET
                  price      = EXCLUDED.price,
                  "inStock"  = EXCLUDED."inStock",
@@ -198,8 +198,8 @@ export async function internalRoutes(app: FastifyInstance) {
             );
             await client.query(
               `INSERT INTO catalogue_promos
-                 ("variantId", type, value, label, store, "minQty", "validUntil", "createdAt", "updatedAt")
-               VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW())`,
+                 (id, "variantId", type, value, label, store, "minQty", "validUntil", "createdAt", "updatedAt")
+               VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,NOW(),NOW())`,
               [variantId, variant.promo.type, variant.promo.value, variant.promo.label,
                variant.promo.store, variant.promo.minQty ?? null,
                variant.promo.validUntil ? new Date(variant.promo.validUntil) : null],
@@ -214,8 +214,8 @@ export async function internalRoutes(app: FastifyInstance) {
             );
             await client.query(
               `INSERT INTO variant_cashbacks
-                 ("variantId", app, amount, label, "createdAt", "updatedAt")
-               VALUES ($1,$2,$3,$4,NOW(),NOW())`,
+                 (id, "variantId", app, amount, label, "createdAt", "updatedAt")
+               VALUES (gen_random_uuid()::text,$1,$2,$3,$4,NOW(),NOW())`,
               [variantId, variant.cashback.app, variant.cashback.amount, variant.cashback.label],
             );
           }
