@@ -1,22 +1,8 @@
 /**
  * GET /v1/products
  *
- * Retourne le catalogue produits complet au format attendu par le mobile
- * (types ProductGroup / ProductVariant de data/productsDB.ts).
- *
- * Query params :
- *   lat       Float  (optionnel) Latitude utilisateur
- *   lng       Float  (optionnel) Longitude utilisateur
- *   radiusKm  Float  (optionnel, défaut 20) Rayon en km
- *
- * Réponse :
- *   {
- *     products:       ProductGroup[]   — catalogue complet (filtré GPS si coords)
- *     nearbyStoreIds: string[] | null  — enseignes dans le rayon (null si pas de GPS)
- *     generated_at:   number           — timestamp ms du fetch
- *   }
- *
- * Chaque variante inclut en bonus `matched_offer` (offre ODR pré-matchée Jaccard).
+ * Retourne le catalogue produits complet au format attendu par le mobile.
+ * Queries SQL pures via pg — zéro Prisma, zéro binaire natif.
  */
 
 import { FastifyInstance } from 'fastify';
@@ -24,15 +10,11 @@ import { z } from 'zod';
 import { haversineKm } from '../utils/haversine.js';
 import { matchProductWithOffers, filterValidOffers } from '../utils/matchOffers.js';
 
-// ─── Validation query params ─────────────────────────────────────────────────
-
 const QuerySchema = z.object({
   lat:      z.coerce.number().min(-90).max(90).optional(),
   lng:      z.coerce.number().min(-180).max(180).optional(),
   radiusKm: z.coerce.number().min(1).max(200).optional().default(20),
 });
-
-// ─── Route ───────────────────────────────────────────────────────────────────
 
 export async function productsRoutes(app: FastifyInstance) {
   app.get('/v1/products', async (request, reply) => {
@@ -47,81 +29,127 @@ export async function productsRoutes(app: FastifyInstance) {
     const { lat, lng, radiusKm } = parseResult.data;
     const hasCoords = lat !== undefined && lng !== undefined;
 
-    // ── Déterminer les enseignes dans le rayon ───────────────────────────────
+    // ── Enseignes dans le rayon ─────────────────────────────────────────────
     let nearbyStoreIds: string[] | null = null;
 
     if (hasCoords) {
-      const stores = await app.prisma.store.findMany({
-        select: { id: true, lat: true, lng: true },
-      });
-      nearbyStoreIds = stores
+      const storeRes = await app.pool.query<{ id: string; lat: number; lng: number }>(
+        'SELECT id, lat, lng FROM stores',
+      );
+      nearbyStoreIds = storeRes.rows
         .filter(s => haversineKm(lat!, lng!, s.lat, s.lng) <= radiusKm)
         .map(s => s.id);
 
       if (nearbyStoreIds.length === 0) {
-        return reply.send({
-          generated_at:   Date.now(),
-          nearbyStoreIds: [],
-          products:       [],
-        });
+        return reply.send({ generated_at: Date.now(), nearbyStoreIds: [], products: [] });
       }
     }
 
-    // ── Offres ODR actives (pour pre-matching Jaccard) ───────────────────────
-    const now = new Date();
-    const rawOffers = await app.prisma.cashbackOffer.findMany({
-      where: { active: true, validUntil: { gt: now } },
-    });
-    const validOffers = filterValidOffers(rawOffers);
+    // ── Offres ODR actives ──────────────────────────────────────────────────
+    const offerRes = await app.pool.query<{
+      id: string; label: string; ean_list: string[];
+      amount: number; min_qty: number; valid_until: Date; active: boolean;
+    }>(
+      `SELECT id, label, ean_list, amount, min_qty, valid_until, active
+       FROM cashback_offers WHERE active = true AND valid_until > NOW()`,
+    );
 
-    // ── Charger groupes + variantes + prix + promos + cashbacks ──────────────
-    const groups = await app.prisma.productGroup.findMany({
-      include: {
-        variants: {
-          include: {
-            prices:    { include: { store: { select: { id: true } } } },
-            promos:    {
-              where: {
-                OR: [{ validUntil: null }, { validUntil: { gt: now } }],
-              },
-            },
-            cashbacks: true,
-          },
-        },
-      },
-    });
+    const validOffers = filterValidOffers(
+      offerRes.rows.map(o => ({
+        id:        o.id,
+        label:     o.label,
+        eanList:   o.ean_list,
+        amount:    Number(o.amount),
+        minQty:    o.min_qty,
+        validUntil: new Date(o.valid_until),
+        active:    o.active,
+      })),
+    );
 
-    // ── Sérialisation au format ProductGroup (mobile) ────────────────────────
+    // ── Groupes produits ────────────────────────────────────────────────────
+    const groupRes = await app.pool.query<{
+      id: string; generic_name: string; emoji: string; image_url: string | null;
+      category_slug: string; subcategory_slug: string; equivalence_key: string;
+      unit_size: number; unit_type: string;
+    }>('SELECT id, generic_name, emoji, image_url, category_slug, subcategory_slug, equivalence_key, unit_size, unit_type FROM product_groups ORDER BY id');
 
-    const products = groups.map(group => {
+    // ── Variantes ───────────────────────────────────────────────────────────
+    const variantRes = await app.pool.query<{
+      id: string; group_id: string; ean: string; segment: string; brand: string;
+      image_url: string | null; base_price: number; price_per_unit: number;
+      unit_ref: string; last_verified: Date;
+    }>('SELECT id, group_id, ean, segment, brand, image_url, base_price, price_per_unit, unit_ref, last_verified FROM product_variants');
+
+    // ── Prix par enseigne ───────────────────────────────────────────────────
+    const priceRes = nearbyStoreIds
+      ? await app.pool.query<{ variant_id: string; store_id: string; price: number; in_stock: boolean }>(
+          'SELECT variant_id, store_id, price, in_stock FROM store_prices WHERE store_id = ANY($1)',
+          [nearbyStoreIds],
+        )
+      : await app.pool.query<{ variant_id: string; store_id: string; price: number; in_stock: boolean }>(
+          'SELECT variant_id, store_id, price, in_stock FROM store_prices',
+        );
+
+    // ── Promos catalogue (une par variante, la plus récente active) ─────────
+    const promoRes = await app.pool.query<{
+      variant_id: string; type: string; value: number; label: string;
+      store: string; min_qty: number | null;
+    }>(
+      `SELECT DISTINCT ON (variant_id) variant_id, type, value, label, store, min_qty
+       FROM catalogue_promos
+       WHERE valid_until IS NULL OR valid_until > NOW()
+       ORDER BY variant_id, created_at DESC`,
+    );
+
+    // ── Cashbacks statiques (un par variante) ───────────────────────────────
+    const cashbackRes = await app.pool.query<{
+      variant_id: string; app: string; amount: number; label: string;
+    }>(
+      `SELECT DISTINCT ON (variant_id) variant_id, app, amount, label
+       FROM variant_cashbacks
+       ORDER BY variant_id, created_at DESC`,
+    );
+
+    // ── Construction des lookup maps ────────────────────────────────────────
+    const pricesByVariant = new Map<string, { store_id: string; price: number; in_stock: boolean }[]>();
+    for (const p of priceRes.rows) {
+      if (!pricesByVariant.has(p.variant_id)) pricesByVariant.set(p.variant_id, []);
+      pricesByVariant.get(p.variant_id)!.push(p);
+    }
+
+    const promoByVariant   = new Map(promoRes.rows.map(p => [p.variant_id, p]));
+    const cashbackByVariant = new Map(cashbackRes.rows.map(c => [c.variant_id, c]));
+
+    const variantsByGroup = new Map<string, typeof variantRes.rows>();
+    for (const v of variantRes.rows) {
+      if (!variantsByGroup.has(v.group_id)) variantsByGroup.set(v.group_id, []);
+      variantsByGroup.get(v.group_id)!.push(v);
+    }
+
+    // ── Assemblage ──────────────────────────────────────────────────────────
+    const products = groupRes.rows.map(group => {
       const variants: Record<string, unknown> = {};
+      const groupVariants = variantsByGroup.get(group.id) ?? [];
 
-      for (const variant of group.variants) {
-        // Filtrer les prix sur les enseignes proches si GPS fourni
-        const relevantPrices = nearbyStoreIds
-          ? variant.prices.filter(p => nearbyStoreIds!.includes(p.storeId))
-          : variant.prices;
+      for (const variant of groupVariants) {
+        const prices = pricesByVariant.get(variant.id) ?? [];
+        if (prices.length === 0) continue;
 
-        const pricesMap: Record<string, number> = {};
+        const pricesMap:  Record<string, number>  = {};
         const inStockMap: Record<string, boolean> = {};
 
-        for (const sp of relevantPrices) {
-          pricesMap[sp.storeId] = sp.price;
-          if (!sp.inStock) inStockMap[sp.storeId] = false;
+        for (const sp of prices) {
+          pricesMap[sp.store_id] = Number(sp.price);
+          if (!sp.in_stock) inStockMap[sp.store_id] = false;
         }
 
-        // Variante sans prix disponible dans le rayon → on la saute
-        if (Object.keys(pricesMap).length === 0) continue;
+        const promo    = promoByVariant.get(variant.id)    ?? null;
+        const cashback = cashbackByVariant.get(variant.id) ?? null;
 
-        // Promo catalogue (unique — prend la première active)
-        const promo    = variant.promos[0]    ?? null;
-        const cashback = variant.cashbacks[0] ?? null;
-
-        // Pre-matching ODR (Jaccard serveur)
         const match = matchProductWithOffers(
           variant.ean,
           variant.brand,
-          group.genericName,
+          group.generic_name,
           validOffers.map(o => ({
             id:      o.id,
             label:   o.label,
@@ -131,35 +159,33 @@ export async function productsRoutes(app: FastifyInstance) {
           })),
         );
 
-        // Format attendu par ProductVariant (data/productsDB.ts)
         variants[variant.segment] = {
           ean:            variant.ean,
-          type:           variant.segment,       // alias — mobile utilise .type
+          type:           variant.segment,
           brand:          variant.brand,
-          basePrice:      variant.basePrice,
+          basePrice:      Number(variant.base_price),
           prices:         pricesMap,
-          price_per_unit: variant.pricePerUnit,
-          unit_ref:       variant.unitRef,
-          last_verified:  variant.lastVerified.getTime(),
+          price_per_unit: Number(variant.price_per_unit),
+          unit_ref:       variant.unit_ref,
+          last_verified:  new Date(variant.last_verified).getTime(),
           ...(Object.keys(inStockMap).length > 0 && { in_stock: inStockMap }),
-          ...(variant.imageUrl && { imageUrl: variant.imageUrl }),
+          ...(variant.image_url && { imageUrl: variant.image_url }),
           ...(promo && {
             catalogue_promo: {
-              type:     promo.type,
-              value:    promo.value,
-              label:    promo.label,
-              store:    promo.store,
-              ...(promo.minQty !== null && { minQty: promo.minQty }),
+              type:  promo.type,
+              value: Number(promo.value),
+              label: promo.label,
+              store: promo.store,
+              ...(promo.min_qty !== null && { minQty: promo.min_qty }),
             },
           }),
           ...(cashback && {
             cashback_app: {
-              app:    cashback.app,              // "shopmium" | "quoty" | "coupon_network"
-              amount: cashback.amount,
+              app:    cashback.app,
+              amount: Number(cashback.amount),
               label:  cashback.label,
             },
           }),
-          // Bonus serveur — non typé côté mobile mais ignoré sans erreur
           ...(match && {
             matched_offer: {
               offerId:   match.offerId,
@@ -170,20 +196,18 @@ export async function productsRoutes(app: FastifyInstance) {
         };
       }
 
-      // Groupe sans aucune variante disponible → on le saute
       if (Object.keys(variants).length === 0) return null;
 
-      // Format attendu par ProductGroup (data/productsDB.ts)
       return {
         groupId:         group.id,
-        genericName:     group.genericName,
+        genericName:     group.generic_name,
         emoji:           group.emoji,
-        imageUrl:        group.imageUrl ?? undefined,
-        categorySlug:    group.categorySlug,
-        subcategorySlug: group.subcategorySlug,
-        equivalence_key: group.equivalenceKey,
-        unit_size:       group.unitSize,
-        unit_type:       group.unitType,
+        imageUrl:        group.image_url ?? undefined,
+        categorySlug:    group.category_slug,
+        subcategorySlug: group.subcategory_slug,
+        equivalence_key: group.equivalence_key,
+        unit_size:       Number(group.unit_size),
+        unit_type:       group.unit_type,
         variants,
       };
     }).filter(Boolean);

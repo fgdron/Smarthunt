@@ -1,12 +1,7 @@
 /**
  * Routes internes — réservées au scraper / pipeline d'ingestion.
  * Protégées par `Authorization: Bearer <INTERNAL_API_KEY>`.
- *
- * POST /v1/internal/update-prices
- *   Upsert atomique (transaction Prisma) de groupes produits + variantes + prix.
- *
- * POST /v1/internal/update-offers
- *   Upsert atomique des offres ODR externes (Shopmium, Quoty, Coupon Network).
+ * Toutes les requêtes DB utilisent pg pur (pas de Prisma).
  */
 
 import { FastifyInstance } from 'fastify';
@@ -29,7 +24,7 @@ function requireInternalKey(app: FastifyInstance) {
 
 // ─── Schemas Zod ─────────────────────────────────────────────────────────────
 
-const StorePriceSchema = z.record(z.number().nonnegative());  // { carrefour: 2.49 }
+const StorePriceSchema = z.record(z.number().nonnegative());
 
 const PromoSchema = z.object({
   type:       z.enum(['percent', 'volume', 'immediate']),
@@ -100,18 +95,24 @@ const UpdateOffersBodySchema = z.object({
 export async function internalRoutes(app: FastifyInstance) {
   requireInternalKey(app);
 
-  // ── GET /v1/internal/ping-db — test connexion Prisma ────────────────────────
+  // ── GET /v1/internal/ping-db ────────────────────────────────────────────────
   app.get('/v1/internal/ping-db', async (_request, reply) => {
     try {
-      const stores   = await app.prisma.store.count();
-      const groups   = await app.prisma.productGroup.count();
-      return reply.send({ ok: true, stores, groups });
+      const [storesRes, groupsRes] = await Promise.all([
+        app.pool.query<{ count: string }>('SELECT COUNT(*) FROM stores'),
+        app.pool.query<{ count: string }>('SELECT COUNT(*) FROM product_groups'),
+      ]);
+      return reply.send({
+        ok:     true,
+        stores: Number(storesRes.rows[0].count),
+        groups: Number(groupsRes.rows[0].count),
+      });
     } catch (err) {
       return reply.status(500).send({ error: String(err) });
     }
   });
 
-  // ── POST /v1/internal/update-prices ─────────────────────────────────────────
+  // ── POST /v1/internal/update-prices ────────────────────────────────────────
   app.post('/v1/internal/update-prices', async (request, reply) => {
     const parseResult = UpdatePricesBodySchema.safeParse(request.body);
     if (!parseResult.success) {
@@ -122,111 +123,113 @@ export async function internalRoutes(app: FastifyInstance) {
     }
 
     const { products } = parseResult.data;
-    let upsertedGroups   = 0;
-    let upsertedVariants = 0;
-    let upsertedPrices   = 0;
+    let upsertedGroups = 0, upsertedVariants = 0, upsertedPrices = 0;
 
-    try { for (const group of products) { await app.prisma.$transaction(async (tx) => {
+    const client = await app.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      for (const group of products) {
         // 1. Upsert groupe produit
-        await tx.productGroup.upsert({
-          where:  { id: group.groupId },
-          create: {
-            id:              group.groupId,
-            genericName:     group.genericName,
-            emoji:           group.emoji,
-            imageUrl:        group.imageUrl ?? null,
-            categorySlug:    group.categorySlug,
-            subcategorySlug: group.subcategorySlug,
-            equivalenceKey:  group.equivalenceKey,
-            unitSize:        group.unitSize,
-            unitType:        group.unitType,
-          },
-          update: {
-            genericName:     group.genericName,
-            emoji:           group.emoji,
-            imageUrl:        group.imageUrl ?? null,
-            categorySlug:    group.categorySlug,
-            subcategorySlug: group.subcategorySlug,
-            equivalenceKey:  group.equivalenceKey,
-            unitSize:        group.unitSize,
-            unitType:        group.unitType,
-          },
-        });
+        await client.query(
+          `INSERT INTO product_groups
+             (id, generic_name, emoji, image_url, category_slug, subcategory_slug,
+              equivalence_key, unit_size, unit_type, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW())
+           ON CONFLICT (id) DO UPDATE SET
+             generic_name     = EXCLUDED.generic_name,
+             emoji            = EXCLUDED.emoji,
+             image_url        = EXCLUDED.image_url,
+             category_slug    = EXCLUDED.category_slug,
+             subcategory_slug = EXCLUDED.subcategory_slug,
+             equivalence_key  = EXCLUDED.equivalence_key,
+             unit_size        = EXCLUDED.unit_size,
+             unit_type        = EXCLUDED.unit_type,
+             updated_at       = NOW()`,
+          [group.groupId, group.genericName, group.emoji, group.imageUrl ?? null,
+           group.categorySlug, group.subcategorySlug, group.equivalenceKey,
+           group.unitSize, group.unitType],
+        );
         upsertedGroups++;
 
         for (const variant of group.variants) {
           // 2. Upsert variante
-          const dbVariant = await tx.productVariant.upsert({
-            where:  { ean: variant.ean },
-            create: {
-              ean:          variant.ean,
-              segment:      variant.segment,
-              brand:        variant.brand,
-              name:         variant.name,
-              imageUrl:     variant.imageUrl ?? null,
-              basePrice:    variant.basePrice,
-              pricePerUnit: variant.pricePerUnit,
-              unitRef:      variant.unitRef,
-              groupId:      group.groupId,
-              lastVerified: new Date(),
-            },
-            update: {
-              brand:        variant.brand,
-              name:         variant.name,
-              imageUrl:     variant.imageUrl ?? null,
-              basePrice:    variant.basePrice,
-              pricePerUnit: variant.pricePerUnit,
-              lastVerified: new Date(),
-            },
-          });
+          const variantRes = await client.query<{ id: string }>(
+            `INSERT INTO product_variants
+               (ean, segment, brand, name, image_url, base_price, price_per_unit,
+                unit_ref, group_id, last_verified, created_at, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW(),NOW())
+             ON CONFLICT (ean) DO UPDATE SET
+               brand         = EXCLUDED.brand,
+               name          = EXCLUDED.name,
+               image_url     = EXCLUDED.image_url,
+               base_price    = EXCLUDED.base_price,
+               price_per_unit = EXCLUDED.price_per_unit,
+               last_verified = NOW(),
+               updated_at    = NOW()
+             RETURNING id`,
+            [variant.ean, variant.segment, variant.brand, variant.name,
+             variant.imageUrl ?? null, variant.basePrice, variant.pricePerUnit,
+             variant.unitRef, group.groupId],
+          );
+          const variantId = variantRes.rows[0].id;
           upsertedVariants++;
 
           // 3. Upsert prix par enseigne
           for (const [storeId, price] of Object.entries(variant.prices)) {
             const inStock = variant.in_stock?.[storeId] !== false;
-            await tx.storePrice.upsert({
-              where:  { variantId_storeId: { variantId: dbVariant.id, storeId } },
-              create: { variantId: dbVariant.id, storeId, price, inStock },
-              update: { price, inStock },
-            });
+            await client.query(
+              `INSERT INTO store_prices (variant_id, store_id, price, in_stock, updated_at)
+               VALUES ($1,$2,$3,$4,NOW())
+               ON CONFLICT (variant_id, store_id) DO UPDATE SET
+                 price     = EXCLUDED.price,
+                 in_stock  = EXCLUDED.in_stock,
+                 updated_at = NOW()`,
+              [variantId, storeId, price, inStock],
+            );
             upsertedPrices++;
           }
 
-          // 4. Upsert promo catalogue (remplace l'existante)
+          // 4. Upsert promo catalogue
           if (variant.promo) {
-            await tx.cataloguePromo.deleteMany({ where: { variantId: dbVariant.id } });
-            await tx.cataloguePromo.create({
-              data: {
-                variantId:  dbVariant.id,
-                type:       variant.promo.type,
-                value:      variant.promo.value,
-                label:      variant.promo.label,
-                store:      variant.promo.store,
-                minQty:     variant.promo.minQty ?? null,
-                validUntil: variant.promo.validUntil
-                  ? new Date(variant.promo.validUntil)
-                  : null,
-              },
-            });
+            await client.query(
+              'DELETE FROM catalogue_promos WHERE variant_id = $1',
+              [variantId],
+            );
+            await client.query(
+              `INSERT INTO catalogue_promos
+                 (variant_id, type, value, label, store, min_qty, valid_until, created_at, updated_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW())`,
+              [variantId, variant.promo.type, variant.promo.value, variant.promo.label,
+               variant.promo.store, variant.promo.minQty ?? null,
+               variant.promo.validUntil ? new Date(variant.promo.validUntil) : null],
+            );
           }
 
           // 5. Upsert cashback statique
           if (variant.cashback) {
-            await tx.variantCashback.deleteMany({ where: { variantId: dbVariant.id } });
-            await tx.variantCashback.create({
-              data: {
-                variantId: dbVariant.id,
-                app:       variant.cashback.app,
-                amount:    variant.cashback.amount,
-                label:     variant.cashback.label,
-              },
-            });
+            await client.query(
+              'DELETE FROM variant_cashbacks WHERE variant_id = $1',
+              [variantId],
+            );
+            await client.query(
+              `INSERT INTO variant_cashbacks
+                 (variant_id, app, amount, label, created_at, updated_at)
+               VALUES ($1,$2,$3,$4,NOW(),NOW())`,
+              [variantId, variant.cashback.app, variant.cashback.amount, variant.cashback.label],
+            );
           }
         }
-    }); } } catch (err) {
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
       const msg = err instanceof Error ? err.message : String(err);
       request.log.error({ err }, 'update-prices transaction failed');
       return reply.status(500).send({ error: 'Transaction failed', details: msg });
+    } finally {
+      client.release();
     }
 
     return reply.status(200).send({
@@ -238,7 +241,7 @@ export async function internalRoutes(app: FastifyInstance) {
     });
   });
 
-  // ── POST /v1/internal/update-offers ─────────────────────────────────────────
+  // ── POST /v1/internal/update-offers ────────────────────────────────────────
   app.post('/v1/internal/update-offers', async (request, reply) => {
     const parseResult = UpdateOffersBodySchema.safeParse(request.body);
     if (!parseResult.success) {
@@ -249,36 +252,39 @@ export async function internalRoutes(app: FastifyInstance) {
     }
 
     const { offers } = parseResult.data;
+    const client = await app.pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    await app.prisma.$transaction(async (tx) => {
       for (const offer of offers) {
-        await tx.cashbackOffer.upsert({
-          where:  { id: offer.id },
-          create: {
-            id:              offer.id,
-            provider:        offer.provider,
-            label:           offer.label,
-            amount:          offer.amount,
-            eanList:         offer.eanList,
-            minQty:          offer.minQty,
-            validUntil:      new Date(offer.validUntil),
-            deeplinkIos:     offer.deeplinkIos     ?? null,
-            deeplinkAndroid: offer.deeplinkAndroid ?? null,
-            active:          offer.active,
-          },
-          update: {
-            label:           offer.label,
-            amount:          offer.amount,
-            eanList:         offer.eanList,
-            minQty:          offer.minQty,
-            validUntil:      new Date(offer.validUntil),
-            deeplinkIos:     offer.deeplinkIos     ?? null,
-            deeplinkAndroid: offer.deeplinkAndroid ?? null,
-            active:          offer.active,
-          },
-        });
+        await client.query(
+          `INSERT INTO cashback_offers
+             (id, provider, label, amount, ean_list, min_qty, valid_until,
+              deeplink_ios, deeplink_android, active, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),NOW())
+           ON CONFLICT (id) DO UPDATE SET
+             label           = EXCLUDED.label,
+             amount          = EXCLUDED.amount,
+             ean_list        = EXCLUDED.ean_list,
+             min_qty         = EXCLUDED.min_qty,
+             valid_until     = EXCLUDED.valid_until,
+             deeplink_ios    = EXCLUDED.deeplink_ios,
+             deeplink_android = EXCLUDED.deeplink_android,
+             active          = EXCLUDED.active,
+             updated_at      = NOW()`,
+          [offer.id, offer.provider, offer.label, offer.amount, offer.eanList,
+           offer.minQty, new Date(offer.validUntil),
+           offer.deeplinkIos ?? null, offer.deeplinkAndroid ?? null, offer.active],
+        );
       }
-    });
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      return reply.status(500).send({ error: String(err) });
+    } finally {
+      client.release();
+    }
 
     return reply.status(200).send({
       ok:          true,

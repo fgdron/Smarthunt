@@ -1,43 +1,44 @@
 /**
  * GET /v1/offers
- *
- * Retourne toutes les offres ODR externes actives et non expirées.
- * Format attendu par ExternalCashbackOffer (engine/matchOffers.ts).
- *
- * Réponse :
- *   {
- *     generated_at: number    Timestamp ms
- *     offers:       ExternalCashbackOffer[]
- *   }
  */
 
 import { FastifyInstance } from 'fastify';
 
 export async function offersRoutes(app: FastifyInstance) {
   app.get('/v1/offers', async (_request, reply) => {
-    const now = new Date();
+    const result = await app.pool.query<{
+      id:               string;
+      provider:         string;
+      label:            string;
+      amount:           number;
+      ean_list:         string[];
+      min_qty:          number;
+      valid_until:      Date;
+      deeplink_ios:     string | null;
+      deeplink_android: string | null;
+    }>(
+      `SELECT id, provider, label, amount, ean_list, min_qty, valid_until,
+              deeplink_ios, deeplink_android
+       FROM cashback_offers
+       WHERE active = true AND valid_until > NOW()
+       ORDER BY amount DESC`,
+    );
 
-    const offers = await app.prisma.cashbackOffer.findMany({
-      where:   { active: true, validUntil: { gt: now } },
-      orderBy: { amount: 'desc' },
-    });
-
-    // Format attendu par ExternalCashbackOffer (engine/matchOffers.ts mobile)
-    const serialized = offers.map(o => ({
+    const offers = result.rows.map(o => ({
       id:              o.id,
-      provider:        o.provider,          // "shopmium" | "quoty" | "coupon_network"
+      provider:        o.provider,
       label:           o.label,
-      amount:          o.amount,
-      eanList:         o.eanList,
-      minQty:          o.minQty,
-      validUntil:      o.validUntil.getTime(),   // timestamp ms (number)
-      deeplinkIos:     o.deeplinkIos  ?? null,
-      deeplinkAndroid: o.deeplinkAndroid ?? null,
+      amount:          Number(o.amount),
+      eanList:         o.ean_list,
+      minQty:          o.min_qty,
+      validUntil:      new Date(o.valid_until).getTime(),
+      deeplinkIos:     o.deeplink_ios     ?? null,
+      deeplinkAndroid: o.deeplink_android ?? null,
     }));
 
     return reply.send({
       generated_at: Date.now(),
-      offers:       serialized,
+      offers,
     });
   });
 }
