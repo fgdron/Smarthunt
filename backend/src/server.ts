@@ -9,10 +9,11 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { Pool } from 'pg';
 
-import { productsRoutes } from './routes/products.js';
-import { offersRoutes }   from './routes/offers.js';
-import { storesRoutes }   from './routes/stores.js';
-import { internalRoutes } from './routes/internal.js';
+import { productsRoutes }  from './routes/products.js';
+import { offersRoutes }    from './routes/offers.js';
+import { storesRoutes }    from './routes/stores.js';
+import { internalRoutes }  from './routes/internal.js';
+import { communityRoutes } from './routes/community.js';
 
 // ─── Fastify pool decorator ───────────────────────────────────────────────────
 
@@ -81,6 +82,7 @@ async function buildApp(): Promise<FastifyInstance> {
   await app.register(offersRoutes);
   await app.register(storesRoutes);
   await app.register(internalRoutes);
+  await app.register(communityRoutes);
 
   // ── Health check ──────────────────────────────────────────────────────────
   app.get('/health', async () => ({
