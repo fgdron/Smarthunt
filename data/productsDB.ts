@@ -895,6 +895,22 @@ export function totalEANCount(): number {
   return activeDB().reduce((s, g) => s + Object.keys(g.variants).length, 0);
 }
 
+/** Trouve le groupe et la variante correspondant à un EAN scanné. */
+export function findVariantByEan(ean: string): {
+  group: ProductGroup;
+  variant: ProductVariant;
+  segment: SegmentType;
+} | undefined {
+  for (const group of activeDB()) {
+    for (const [segment, variant] of Object.entries(group.variants)) {
+      if (variant && variant.ean === ean) {
+        return { group, variant, segment: segment as SegmentType };
+      }
+    }
+  }
+  return undefined;
+}
+
 // ─── Stats (pour affichage dans l'UI) ─────────────────────
 
 export function categoryProductCount(catSlug: string): number {

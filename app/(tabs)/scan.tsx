@@ -1,15 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView,
+  ScrollView, Modal, Platform,
 } from 'react-native';
 import { showAlert } from '@/utils/alert';
 import TutorialTooltip from '@/components/TutorialTooltip';
 import { useTutorial } from '@/hooks/useTutorial';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Clock, Camera, Search, CheckCircle, ScanLine, Zap, List, Wallet, FileText } from 'lucide-react-native';
+import { Clock, Camera, Search, CheckCircle, ScanLine, Zap, Wallet, FileText, Tag, X } from 'lucide-react-native';
 import { Colors, Spacing, Radius, Typography } from '@/constants/theme';
 import { useSmartHuntStore } from '@/store/useSmartHuntStore';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useRouter } from 'expo-router';
+import { findVariantByEan } from '@/data/productsDB';
 
 type ScanStep = 'idle' | 'scanning' | 'processing' | 'results';
 
@@ -32,10 +35,14 @@ const MOCK_OCR_RESULTS: DetectedItem[] = [
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export default function ScanScreen() {
+  const router = useRouter();
   const { huntList, claimCashback, userBasket, lastScanAt, recordScan } = useSmartHuntStore();
   const { seen: tutorialSeen, markSeen: markTutorialSeen } = useTutorial('scanner');
-  const [step, setStep] = useState<ScanStep>('idle');
-  const [results, setResults] = useState<DetectedItem[]>([]);
+  const [step, setStep]           = useState<ScanStep>('idle');
+  const [results, setResults]     = useState<DetectedItem[]>([]);
+  const [promoScanner, setPromoScanner] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const scannedRef = useRef(false); // évite les doubles détections
 
   // Calcul relance : panier non-vide ET (jamais scanné OU > 7 jours)
   const daysSinceScan = lastScanAt ? (Date.now() - lastScanAt) / DAY_MS : Infinity;
@@ -85,12 +92,70 @@ export default function ScanScreen() {
     setResults([]);
   };
 
+  // ── Scanner promo ──────────────────────────────────────────────────────────
+
+  const handleOpenPromoScanner = async () => {
+    if (!cameraPermission?.granted) {
+      const { granted } = await requestCameraPermission();
+      if (!granted) {
+        showAlert(
+          'Caméra requise',
+          'Autorisez l\'accès à la caméra dans les réglages pour scanner un produit.',
+          [{ text: 'OK' }],
+        );
+        return;
+      }
+    }
+    scannedRef.current = false;
+    setPromoScanner(true);
+  };
+
+  const handleBarcodeScanned = ({ data: ean }: { data: string }) => {
+    if (scannedRef.current) return; // évite les doubles déclenchements
+    scannedRef.current = true;
+    setPromoScanner(false);
+
+    // Résolution locale du nom produit
+    const found       = findVariantByEan(ean);
+    const productName = found
+      ? `${found.variant.brand} ${found.group.genericName}`
+      : '';
+
+    router.push({
+      pathname: '/report-promo',
+      params:   { ean, productName },
+    });
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* ── Modal scanner code-barre promo ── */}
+      <Modal visible={promoScanner} animationType="slide" onRequestClose={() => setPromoScanner(false)}>
+        <View style={styles.cameraContainer}>
+          <CameraView
+            style={styles.camera}
+            facing="back"
+            barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e'] }}
+            onBarcodeScanned={handleBarcodeScanned}
+          />
+          {/* Viseur */}
+          <View style={styles.cameraOverlay}>
+            <View style={styles.viewfinder} />
+            <Text style={styles.cameraHint}>Pointez vers le code-barre du produit</Text>
+          </View>
+          {/* Bouton fermer */}
+          <SafeAreaView style={styles.cameraClose} edges={['top']}>
+            <TouchableOpacity style={styles.closeBtn} onPress={() => setPromoScanner(false)}>
+              <X size={22} color={Colors.white} strokeWidth={2} />
+            </TouchableOpacity>
+          </SafeAreaView>
+        </View>
+      </Modal>
+
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.title}>Scanner un Ticket</Text>
-          <Text style={styles.subtitle}>Confirmez vos achats et activez vos remboursements</Text>
+          <Text style={styles.title}>Scanner</Text>
+          <Text style={styles.subtitle}>Ticket de caisse ou promo en magasin</Text>
         </View>
 
         {step === 'idle' && (
@@ -160,6 +225,29 @@ export default function ScanScreen() {
                 </Text>
               </View>
             )}
+
+            {/* ── Section signalement promo ── */}
+            <View style={styles.divider} />
+            <TouchableOpacity
+              style={styles.promoScanCta}
+              onPress={handleOpenPromoScanner}
+              activeOpacity={0.85}
+            >
+              <View style={styles.promoScanLeft}>
+                <View style={styles.promoScanIconWrap}>
+                  <Tag size={24} color={Colors.gold} strokeWidth={2} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.promoScanTitle}>Signaler une promo</Text>
+                  <Text style={styles.promoScanSub}>
+                    Tu vois une promo en rayon ? Scanne le produit et informe la communauté.
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.promoScanArrow}>
+                <ScanLine size={20} color={Colors.gold} strokeWidth={2} />
+              </View>
+            </TouchableOpacity>
           </>
         )}
 
@@ -432,4 +520,68 @@ const styles = StyleSheet.create({
   claimBtnText: { ...Typography.bodyBold, color: Colors.background, fontSize: 16 },
   resetBtn: { alignItems: 'center', padding: Spacing.md },
   resetBtnText: { ...Typography.bodyBold, color: Colors.textSecondary },
+
+  // ── Signalement promo ───────────────────────────────────────────────────────
+  divider: {
+    height: 1,
+    backgroundColor: Colors.cardBorder,
+    marginVertical: Spacing.xl,
+  },
+  promoScanCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.card,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.gold + '44',
+    padding: Spacing.lg,
+  },
+  promoScanLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flex: 1 },
+  promoScanIconWrap: {
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: Colors.gold + '18',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  promoScanTitle: { ...Typography.bodyBold, color: Colors.white, marginBottom: 3 },
+  promoScanSub:   { ...Typography.small, color: Colors.textSecondary, lineHeight: 18 },
+  promoScanArrow: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: Colors.gold + '18',
+    alignItems: 'center', justifyContent: 'center',
+    marginLeft: Spacing.sm,
+  },
+
+  // ── Modal caméra ────────────────────────────────────────────────────────────
+  cameraContainer: { flex: 1, backgroundColor: '#000' },
+  camera:          { flex: 1 },
+  cameraOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewfinder: {
+    width: 260, height: 160,
+    borderWidth: 2, borderColor: Colors.gold,
+    borderRadius: Radius.md,
+    backgroundColor: 'transparent',
+  },
+  cameraHint: {
+    ...Typography.bodyBold,
+    color: Colors.white,
+    marginTop: Spacing.xl,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  cameraClose: {
+    position: 'absolute', top: 0, left: 0, right: 0,
+    paddingHorizontal: Spacing.lg,
+  },
+  closeBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center', justifyContent: 'center',
+  },
 });
