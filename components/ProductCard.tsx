@@ -4,6 +4,7 @@ import { ChevronRight, Bookmark, ShoppingBag, ScanLine } from 'lucide-react-nati
 import { Colors, Spacing, Radius, Typography } from '@/constants/theme';
 import BadgeCumulMax from './BadgeCumulMax';
 import StoreTag from './StoreTag';
+import CommunityPromoBadge from './CommunityPromoBadge';
 import { Optimization } from '@/data/mockData';
 import { useSmartHuntStore } from '@/store/useSmartHuntStore';
 import { PROVIDER_META, type ExternalCashbackOffer } from '@/engine/matchOffers';
@@ -49,10 +50,12 @@ interface Props {
   imageUrl?: string;
   /** Offre de remboursement externe trouvée par le Matchmaker ODR. */
   externalOffer?: ExternalCashbackOffer;
+  /** EAN du produit — active le badge communautaire si fourni. */
+  ean?: string;
   onPress?: () => void;
 }
 
-export default function ProductCard({ item, imageUrl, externalOffer, onPress }: Props) {
+export default function ProductCard({ item, imageUrl, externalOffer, ean, onPress }: Props) {
   const { addToHunt, removeFromHunt, isInHunt } = useSmartHuntStore();
   const inHunt = isInHunt(item.id);
 
@@ -148,6 +151,9 @@ export default function ProductCard({ item, imageUrl, externalOffer, onPress }: 
           </View>
         );
       })()}
+
+      {/* ── Badge communautaire ── */}
+      {ean && <CommunityPromoBadge ean={ean} mode="compact" />}
 
       {/* ── Ligne basse ── */}
       <View style={styles.bottomRow}>
