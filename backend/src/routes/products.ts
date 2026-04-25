@@ -50,8 +50,8 @@ export async function productsRoutes(app: FastifyInstance) {
       id: string; label: string; ean_list: string[];
       amount: number; min_qty: number; valid_until: Date; active: boolean;
     }>(
-      `SELECT id, label, ean_list, amount, min_qty, valid_until, active
-       FROM cashback_offers WHERE active = true AND valid_until > NOW()`,
+      `SELECT id, label, "eanList" AS ean_list, amount, "minQty" AS min_qty, "validUntil" AS valid_until, active
+       FROM cashback_offers WHERE active = true AND "validUntil" > NOW()`,
     );
 
     const validOffers = filterValidOffers(
@@ -71,23 +71,23 @@ export async function productsRoutes(app: FastifyInstance) {
       id: string; generic_name: string; emoji: string; image_url: string | null;
       category_slug: string; subcategory_slug: string; equivalence_key: string;
       unit_size: number; unit_type: string;
-    }>('SELECT id, generic_name, emoji, image_url, category_slug, subcategory_slug, equivalence_key, unit_size, unit_type FROM product_groups ORDER BY id');
+    }>('SELECT id, "genericName" AS generic_name, emoji, "imageUrl" AS image_url, "categorySlug" AS category_slug, "subcategorySlug" AS subcategory_slug, "equivalenceKey" AS equivalence_key, "unitSize" AS unit_size, "unitType" AS unit_type FROM product_groups ORDER BY id');
 
     // ── Variantes ───────────────────────────────────────────────────────────
     const variantRes = await app.pool.query<{
       id: string; group_id: string; ean: string; segment: string; brand: string;
       image_url: string | null; base_price: number; price_per_unit: number;
       unit_ref: string; last_verified: Date;
-    }>('SELECT id, group_id, ean, segment, brand, image_url, base_price, price_per_unit, unit_ref, last_verified FROM product_variants');
+    }>('SELECT id, "groupId" AS group_id, ean, segment, brand, "imageUrl" AS image_url, "basePrice" AS base_price, "pricePerUnit" AS price_per_unit, "unitRef" AS unit_ref, "lastVerified" AS last_verified FROM product_variants');
 
     // ── Prix par enseigne ───────────────────────────────────────────────────
     const priceRes = nearbyStoreIds
       ? await app.pool.query<{ variant_id: string; store_id: string; price: number; in_stock: boolean }>(
-          'SELECT variant_id, store_id, price, in_stock FROM store_prices WHERE store_id = ANY($1)',
+          'SELECT "variantId" AS variant_id, "storeId" AS store_id, price, "inStock" AS in_stock FROM store_prices WHERE "storeId" = ANY($1)',
           [nearbyStoreIds],
         )
       : await app.pool.query<{ variant_id: string; store_id: string; price: number; in_stock: boolean }>(
-          'SELECT variant_id, store_id, price, in_stock FROM store_prices',
+          'SELECT "variantId" AS variant_id, "storeId" AS store_id, price, "inStock" AS in_stock FROM store_prices',
         );
 
     // ── Promos catalogue (une par variante, la plus récente active) ─────────
@@ -95,19 +95,19 @@ export async function productsRoutes(app: FastifyInstance) {
       variant_id: string; type: string; value: number; label: string;
       store: string; min_qty: number | null;
     }>(
-      `SELECT DISTINCT ON (variant_id) variant_id, type, value, label, store, min_qty
+      `SELECT DISTINCT ON ("variantId") "variantId" AS variant_id, type, value, label, store, "minQty" AS min_qty
        FROM catalogue_promos
-       WHERE valid_until IS NULL OR valid_until > NOW()
-       ORDER BY variant_id, created_at DESC`,
+       WHERE "validUntil" IS NULL OR "validUntil" > NOW()
+       ORDER BY "variantId", "createdAt" DESC`,
     );
 
     // ── Cashbacks statiques (un par variante) ───────────────────────────────
     const cashbackRes = await app.pool.query<{
       variant_id: string; app: string; amount: number; label: string;
     }>(
-      `SELECT DISTINCT ON (variant_id) variant_id, app, amount, label
+      `SELECT DISTINCT ON ("variantId") "variantId" AS variant_id, app, amount, label
        FROM variant_cashbacks
-       ORDER BY variant_id, created_at DESC`,
+       ORDER BY "variantId", "createdAt" DESC`,
     );
 
     // ── Construction des lookup maps ────────────────────────────────────────

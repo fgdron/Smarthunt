@@ -133,19 +133,19 @@ export async function internalRoutes(app: FastifyInstance) {
         // 1. Upsert groupe produit
         await client.query(
           `INSERT INTO product_groups
-             (id, generic_name, emoji, image_url, category_slug, subcategory_slug,
-              equivalence_key, unit_size, unit_type, created_at, updated_at)
+             (id, "genericName", emoji, "imageUrl", "categorySlug", "subcategorySlug",
+              "equivalenceKey", "unitSize", "unitType", "createdAt", "updatedAt")
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW())
            ON CONFLICT (id) DO UPDATE SET
-             generic_name     = EXCLUDED.generic_name,
-             emoji            = EXCLUDED.emoji,
-             image_url        = EXCLUDED.image_url,
-             category_slug    = EXCLUDED.category_slug,
-             subcategory_slug = EXCLUDED.subcategory_slug,
-             equivalence_key  = EXCLUDED.equivalence_key,
-             unit_size        = EXCLUDED.unit_size,
-             unit_type        = EXCLUDED.unit_type,
-             updated_at       = NOW()`,
+             "genericName"     = EXCLUDED."genericName",
+             emoji             = EXCLUDED.emoji,
+             "imageUrl"        = EXCLUDED."imageUrl",
+             "categorySlug"    = EXCLUDED."categorySlug",
+             "subcategorySlug" = EXCLUDED."subcategorySlug",
+             "equivalenceKey"  = EXCLUDED."equivalenceKey",
+             "unitSize"        = EXCLUDED."unitSize",
+             "unitType"        = EXCLUDED."unitType",
+             "updatedAt"       = NOW()`,
           [group.groupId, group.genericName, group.emoji, group.imageUrl ?? null,
            group.categorySlug, group.subcategorySlug, group.equivalenceKey,
            group.unitSize, group.unitType],
@@ -156,17 +156,17 @@ export async function internalRoutes(app: FastifyInstance) {
           // 2. Upsert variante
           const variantRes = await client.query<{ id: string }>(
             `INSERT INTO product_variants
-               (ean, segment, brand, name, image_url, base_price, price_per_unit,
-                unit_ref, group_id, last_verified, created_at, updated_at)
+               (ean, segment, brand, name, "imageUrl", "basePrice", "pricePerUnit",
+                "unitRef", "groupId", "lastVerified", "createdAt", "updatedAt")
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW(),NOW())
              ON CONFLICT (ean) DO UPDATE SET
-               brand         = EXCLUDED.brand,
-               name          = EXCLUDED.name,
-               image_url     = EXCLUDED.image_url,
-               base_price    = EXCLUDED.base_price,
-               price_per_unit = EXCLUDED.price_per_unit,
-               last_verified = NOW(),
-               updated_at    = NOW()
+               brand          = EXCLUDED.brand,
+               name           = EXCLUDED.name,
+               "imageUrl"     = EXCLUDED."imageUrl",
+               "basePrice"    = EXCLUDED."basePrice",
+               "pricePerUnit" = EXCLUDED."pricePerUnit",
+               "lastVerified" = NOW(),
+               "updatedAt"    = NOW()
              RETURNING id`,
             [variant.ean, variant.segment, variant.brand, variant.name,
              variant.imageUrl ?? null, variant.basePrice, variant.pricePerUnit,
@@ -179,12 +179,12 @@ export async function internalRoutes(app: FastifyInstance) {
           for (const [storeId, price] of Object.entries(variant.prices)) {
             const inStock = variant.in_stock?.[storeId] !== false;
             await client.query(
-              `INSERT INTO store_prices (variant_id, store_id, price, in_stock, updated_at)
+              `INSERT INTO store_prices ("variantId", "storeId", price, "inStock", "updatedAt")
                VALUES ($1,$2,$3,$4,NOW())
-               ON CONFLICT (variant_id, store_id) DO UPDATE SET
-                 price     = EXCLUDED.price,
-                 in_stock  = EXCLUDED.in_stock,
-                 updated_at = NOW()`,
+               ON CONFLICT ("variantId", "storeId") DO UPDATE SET
+                 price      = EXCLUDED.price,
+                 "inStock"  = EXCLUDED."inStock",
+                 "updatedAt" = NOW()`,
               [variantId, storeId, price, inStock],
             );
             upsertedPrices++;
@@ -193,12 +193,12 @@ export async function internalRoutes(app: FastifyInstance) {
           // 4. Upsert promo catalogue
           if (variant.promo) {
             await client.query(
-              'DELETE FROM catalogue_promos WHERE variant_id = $1',
+              'DELETE FROM catalogue_promos WHERE "variantId" = $1',
               [variantId],
             );
             await client.query(
               `INSERT INTO catalogue_promos
-                 (variant_id, type, value, label, store, min_qty, valid_until, created_at, updated_at)
+                 ("variantId", type, value, label, store, "minQty", "validUntil", "createdAt", "updatedAt")
                VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW())`,
               [variantId, variant.promo.type, variant.promo.value, variant.promo.label,
                variant.promo.store, variant.promo.minQty ?? null,
@@ -209,12 +209,12 @@ export async function internalRoutes(app: FastifyInstance) {
           // 5. Upsert cashback statique
           if (variant.cashback) {
             await client.query(
-              'DELETE FROM variant_cashbacks WHERE variant_id = $1',
+              'DELETE FROM variant_cashbacks WHERE "variantId" = $1',
               [variantId],
             );
             await client.query(
               `INSERT INTO variant_cashbacks
-                 (variant_id, app, amount, label, created_at, updated_at)
+                 ("variantId", app, amount, label, "createdAt", "updatedAt")
                VALUES ($1,$2,$3,$4,NOW(),NOW())`,
               [variantId, variant.cashback.app, variant.cashback.amount, variant.cashback.label],
             );
@@ -259,19 +259,19 @@ export async function internalRoutes(app: FastifyInstance) {
       for (const offer of offers) {
         await client.query(
           `INSERT INTO cashback_offers
-             (id, provider, label, amount, ean_list, min_qty, valid_until,
-              deeplink_ios, deeplink_android, active, created_at, updated_at)
+             (id, provider, label, amount, "eanList", "minQty", "validUntil",
+              "deeplinkIos", "deeplinkAndroid", active, "createdAt", "updatedAt")
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),NOW())
            ON CONFLICT (id) DO UPDATE SET
-             label           = EXCLUDED.label,
-             amount          = EXCLUDED.amount,
-             ean_list        = EXCLUDED.ean_list,
-             min_qty         = EXCLUDED.min_qty,
-             valid_until     = EXCLUDED.valid_until,
-             deeplink_ios    = EXCLUDED.deeplink_ios,
-             deeplink_android = EXCLUDED.deeplink_android,
-             active          = EXCLUDED.active,
-             updated_at      = NOW()`,
+             label              = EXCLUDED.label,
+             amount             = EXCLUDED.amount,
+             "eanList"          = EXCLUDED."eanList",
+             "minQty"           = EXCLUDED."minQty",
+             "validUntil"       = EXCLUDED."validUntil",
+             "deeplinkIos"      = EXCLUDED."deeplinkIos",
+             "deeplinkAndroid"  = EXCLUDED."deeplinkAndroid",
+             active             = EXCLUDED.active,
+             "updatedAt"        = NOW()`,
           [offer.id, offer.provider, offer.label, offer.amount, offer.eanList,
            offer.minQty, new Date(offer.validUntil),
            offer.deeplinkIos ?? null, offer.deeplinkAndroid ?? null, offer.active],

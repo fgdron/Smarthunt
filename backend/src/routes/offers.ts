@@ -17,10 +17,10 @@ export async function offersRoutes(app: FastifyInstance) {
       deeplink_ios:     string | null;
       deeplink_android: string | null;
     }>(
-      `SELECT id, provider, label, amount, ean_list, min_qty, valid_until,
-              deeplink_ios, deeplink_android
+      `SELECT id, provider, label, amount, "eanList" AS ean_list, "minQty" AS min_qty, "validUntil" AS valid_until,
+              "deeplinkIos" AS deeplink_ios, "deeplinkAndroid" AS deeplink_android
        FROM cashback_offers
-       WHERE active = true AND valid_until > NOW()
+       WHERE active = true AND "validUntil" > NOW()
        ORDER BY amount DESC`,
     );
 
