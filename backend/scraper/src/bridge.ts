@@ -44,6 +44,40 @@ async function loadStaticDB(): Promise<ProductDB['PRODUCTS_DB']> {
   return mod.PRODUCTS_DB;
 }
 
+async function loadStoresConfig(): Promise<ProductDB['STORES_CONFIG']> {
+  const mod = await import(DB_PATH) as ProductDB;
+  return mod.STORES_CONFIG;
+}
+
+// ─── Seed enseignes ───────────────────────────────────────────────────────────
+
+async function seedStores(storesConfig: ProductDB['STORES_CONFIG']) {
+  const stores = Object.values(storesConfig).map(s => ({
+    id:    s.id,
+    name:  s.label,
+    color: s.color,
+    lat:   s.coords.lat,
+    lng:   s.coords.lng,
+  }));
+
+  const res = await fetch(`${API_URL}/v1/internal/seed-stores`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${INTERNAL_KEY}`,
+    },
+    body: JSON.stringify({ stores }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`seed-stores HTTP ${res.status}: ${body}`);
+  }
+
+  const json = await res.json() as { ok: boolean; upserted: number };
+  console.log(`   ✓ ${json.upserted} enseignes seedées.\n`);
+}
+
 // ─── Transformation ProductGroup → payload API ───────────────────────────────
 
 function transformGroup(group: ProductDB['PRODUCTS_DB'][number]) {
@@ -137,6 +171,11 @@ async function sendBatch(products: ReturnType<typeof transformGroup>[]) {
 async function main() {
   console.log(`🔗  Bridge SmartHunt → ${API_URL}`);
   console.log(`📦  Chargement de la base statique...`);
+
+  // 0. Seed enseignes (requis avant les store_prices)
+  console.log(`🏪  Seeding des enseignes...`);
+  const storesConfig = await loadStoresConfig();
+  await seedStores(storesConfig);
 
   const db = await loadStaticDB();
   console.log(`   ${db.length} groupes produits trouvés.\n`);

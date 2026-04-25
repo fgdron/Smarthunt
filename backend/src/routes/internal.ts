@@ -90,10 +90,57 @@ const UpdateOffersBodySchema = z.object({
   offers: z.array(OfferSchema).min(1),
 });
 
+const StoreSchema = z.object({
+  id:    z.string().min(1),
+  name:  z.string().min(1),
+  color: z.string().min(1),
+  lat:   z.number(),
+  lng:   z.number(),
+});
+
+const SeedStoresBodySchema = z.object({
+  stores: z.array(StoreSchema).min(1),
+});
+
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 export async function internalRoutes(app: FastifyInstance) {
   requireInternalKey(app);
+
+  // ── POST /v1/internal/seed-stores ──────────────────────────────────────────
+  app.post('/v1/internal/seed-stores', async (request, reply) => {
+    const parseResult = SeedStoresBodySchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.status(400).send({ error: 'Invalid payload', details: parseResult.error.flatten() });
+    }
+
+    const { stores } = parseResult.data;
+    const client = await app.pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const store of stores) {
+        await client.query(
+          `INSERT INTO stores (id, name, color, lat, lng, "createdAt", "updatedAt")
+           VALUES ($1,$2,$3,$4,$5,NOW(),NOW())
+           ON CONFLICT (id) DO UPDATE SET
+             name       = EXCLUDED.name,
+             color      = EXCLUDED.color,
+             lat        = EXCLUDED.lat,
+             lng        = EXCLUDED.lng,
+             "updatedAt" = NOW()`,
+          [store.id, store.name, store.color, store.lat, store.lng],
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      return reply.status(500).send({ error: String(err) });
+    } finally {
+      client.release();
+    }
+
+    return reply.status(200).send({ ok: true, upserted: stores.length });
+  });
 
   // ── GET /v1/internal/ping-db ────────────────────────────────────────────────
   app.get('/v1/internal/ping-db', async (_request, reply) => {
