@@ -36,8 +36,17 @@ async function buildApp(): Promise<FastifyInstance> {
   // ── pg Pool (pure JS — zero native binary) ───────────────────────────────
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
-    max: 10,
+    ssl: process.env.DATABASE_URL?.includes('sslmode=require')
+      ? { rejectUnauthorized: false }
+      : undefined,
+    max: 5,
+    idleTimeoutMillis:    30000,
+    connectionTimeoutMillis: 5000,
+  });
+
+  // Prevent pool 'error' events from crashing the process
+  pool.on('error', (err) => {
+    console.error('pg pool idle client error (non-fatal):', err.message);
   });
 
   app.decorate('pool', pool);
@@ -130,5 +139,10 @@ process.on('unhandledRejection', (reason) => {
   console.error('UNHANDLED REJECTION:', reason);
   process.exit(1);
 });
+
+// Heartbeat — confirms process is alive every 60s in Deploy Logs
+setInterval(() => {
+  console.log(`[HEARTBEAT] ${new Date().toISOString()} — process alive`);
+}, 60_000).unref();
 
 main();
