@@ -135,6 +135,7 @@ export default function RootLayout() {
         <Stack.Screen name="product/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="basket-summary" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="strategy" options={{ animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="report-promo" options={{ animation: 'slide_from_bottom' }} />
         </Stack>
       </View>
     </GestureHandlerRootView>
