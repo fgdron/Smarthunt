@@ -148,4 +148,14 @@ async function main() {
   }
 }
 
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err.message, err.stack);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('UNHANDLED REJECTION:', reason);
+  process.exit(1);
+});
+
 main();
