@@ -122,7 +122,7 @@ async function main() {
 
       case 'openprices': {
         await seedStores();
-        const entries = await scrapeOpenPrices(['leclerc', 'carrefour', 'lidl']);
+        const entries = await scrapeOpenPrices(API_URL, API_KEY!);
         await pushPrices(entries, 'openprices');
         break;
       }
@@ -140,7 +140,7 @@ async function main() {
         await seedStores();
 
         // 2. Open Prices — tous les magasins (prix + promos détectées)
-        const openPricesEntries = await scrapeOpenPrices(['leclerc', 'carrefour', 'lidl']);
+        const openPricesEntries = await scrapeOpenPrices(API_URL, API_KEY!);
         await pushPrices(openPricesEntries, 'openprices');
 
         // 3. Lidl promos hebdo (enrichit les prix Lidl déjà en base)

@@ -160,6 +160,19 @@ export async function internalRoutes(app: FastifyInstance) {
     return reply.status(200).send({ ok: true, upserted: stores.length });
   });
 
+  // ── GET /v1/internal/eans ──────────────────────────────────────────────────
+  // Retourne tous les EANs du catalogue pour le scraper Open Prices
+  app.get('/v1/internal/eans', async (_request, reply) => {
+    try {
+      const res = await app.pool.query<{ ean: string }>(
+        'SELECT ean FROM product_variants WHERE ean IS NOT NULL ORDER BY ean',
+      );
+      return reply.send({ eans: res.rows.map(r => r.ean), total: res.rows.length });
+    } catch (err) {
+      return reply.status(500).send({ error: String(err) });
+    }
+  });
+
   // ── GET /v1/internal/ping-db ────────────────────────────────────────────────
   app.get('/v1/internal/ping-db', async (_request, reply) => {
     try {
