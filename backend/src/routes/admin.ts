@@ -31,35 +31,61 @@ function checkBasicAuth(request: FastifyRequest, reply: FastifyReply): boolean {
 
 // ─── Stats SQL ────────────────────────────────────────────────────────────────
 
+// Wrapper sécurisé : retourne une valeur par défaut si la table n'existe pas
+async function safeQuery<T>(
+  pool: FastifyInstance['pool'],
+  sql: string,
+  fallback: T,
+): Promise<T> {
+  try {
+    const res = await pool.query(sql);
+    return (res.rows[0] ?? fallback) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+async function safeQueryRows<T>(
+  pool: FastifyInstance['pool'],
+  sql: string,
+): Promise<T[]> {
+  try {
+    const res = await pool.query(sql);
+    return res.rows as T[];
+  } catch {
+    return [];
+  }
+}
+
 async function fetchStats(pool: FastifyInstance['pool']) {
   const [catalogue, promos, offers, community, stores, activity, topCategories] =
     await Promise.all([
 
       // 1. Catalogue
-      pool.query(`
+      safeQuery(pool, `
         SELECT
           (SELECT COUNT(*)::int FROM product_groups)   AS groups,
           (SELECT COUNT(*)::int FROM product_variants) AS variants,
           (SELECT COUNT(*)::int FROM store_prices)     AS prices,
           (SELECT TO_CHAR(MAX("updatedAt"), 'DD/MM/YYYY HH24:MI') FROM store_prices) AS last_price_update,
           (SELECT COUNT(DISTINCT "storeId")::int FROM store_prices) AS stores_with_prices
-      `),
+      `, { groups: 0, variants: 0, prices: 0, last_price_update: null, stores_with_prices: 0 }),
 
       // 2. Promos catalogue
-      pool.query(`
+      safeQuery(pool, `
         SELECT
           COUNT(*)::int AS total,
           COUNT(*) FILTER (WHERE "validUntil" IS NULL OR "validUntil" > NOW())::int AS active,
           ROUND(AVG(value) FILTER (WHERE type = 'percent')::numeric, 1) AS avg_discount_pct,
-          COUNT(*) FILTER (WHERE type = 'percent')::int  AS type_percent,
+          COUNT(*) FILTER (WHERE type = 'percent')::int   AS type_percent,
           COUNT(*) FILTER (WHERE type = 'immediate')::int AS type_immediate,
-          COUNT(*) FILTER (WHERE type = 'volume')::int   AS type_volume,
-          COUNT(*) FILTER (WHERE type = 'bundle')::int   AS type_bundle
+          COUNT(*) FILTER (WHERE type = 'volume')::int    AS type_volume,
+          COUNT(*) FILTER (WHERE type = 'bundle')::int    AS type_bundle
         FROM catalogue_promos
-      `),
+      `, { total: 0, active: 0, avg_discount_pct: null, type_percent: 0, type_immediate: 0, type_volume: 0, type_bundle: 0 }),
 
       // 3. ODR / Cashback offers
-      pool.query(`
+      safeQuery(pool, `
         SELECT
           COUNT(*)::int AS total,
           COUNT(*) FILTER (WHERE "validUntil" > NOW() AND active = true)::int AS active,
@@ -67,10 +93,10 @@ async function fetchStats(pool: FastifyInstance['pool']) {
           COUNT(*) FILTER (WHERE "validUntil" BETWEEN NOW() AND NOW() + INTERVAL '7 days' AND active = true)::int AS expiring_soon,
           ROUND(COALESCE(AVG(amount) FILTER (WHERE active = true AND "validUntil" > NOW()), 0)::numeric, 2) AS avg_amount
         FROM cashback_offers
-      `),
+      `, { total: 0, active: 0, total_amount: 0, expiring_soon: 0, avg_amount: 0 }),
 
       // 4. Community promos
-      pool.query(`
+      safeQuery(pool, `
         SELECT
           COUNT(*)::int AS total,
           COUNT(*) FILTER (WHERE status = 'pending')::int   AS pending,
@@ -82,10 +108,10 @@ async function fetchStats(pool: FastifyInstance['pool']) {
           (SELECT COUNT(*)::int FROM community_votes) AS total_votes,
           (SELECT COUNT(*)::int FROM community_votes WHERE "createdAt" > NOW() - INTERVAL '24 hours') AS votes_today
         FROM community_promos
-      `),
+      `, { total: 0, pending: 0, confirmed: 0, rejected: 0, expired: 0, today: 0, unique_reporters: 0, total_votes: 0, votes_today: 0 }),
 
       // 5. Couverture par enseigne
-      pool.query(`
+      safeQueryRows(pool, `
         SELECT
           s.name,
           s.color,
@@ -99,7 +125,7 @@ async function fetchStats(pool: FastifyInstance['pool']) {
       `),
 
       // 6. Activité communautaire 7 derniers jours
-      pool.query(`
+      safeQueryRows(pool, `
         SELECT
           TO_CHAR(DATE("createdAt"), 'DD/MM') AS day,
           COUNT(*)::int AS count
@@ -109,8 +135,8 @@ async function fetchStats(pool: FastifyInstance['pool']) {
         ORDER BY DATE("createdAt") ASC
       `),
 
-      // 7. Top catégories (nb variantes)
-      pool.query(`
+      // 7. Top catégories
+      safeQueryRows(pool, `
         SELECT
           "categorySlug" AS category,
           COUNT(*)::int AS group_count
@@ -122,14 +148,14 @@ async function fetchStats(pool: FastifyInstance['pool']) {
     ]);
 
   return {
-    generated_at:  new Date().toISOString(),
-    catalogue:     catalogue.rows[0],
-    promos:        promos.rows[0],
-    offers:        offers.rows[0],
-    community:     community.rows[0],
-    stores:        stores.rows,
-    activity:      activity.rows,
-    top_categories: topCategories.rows,
+    generated_at:   new Date().toISOString(),
+    catalogue,
+    promos,
+    offers,
+    community,
+    stores,
+    activity,
+    top_categories: topCategories,
   };
 }
 
