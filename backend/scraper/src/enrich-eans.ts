@@ -74,7 +74,7 @@ async function searchRealEan(
   try {
     // Requête : marque + nom, filtré France
     const query = encodeURIComponent(`${brand} ${name}`.trim().slice(0, 60));
-    const url   = `${OFF_BASE}?search_terms=${query}&countries_tags=en:france&json=1&page_size=10&sort_by=unique_scans_n`;
+    const url   = `${OFF_BASE}?search_terms=${query}&countries_tags=en:france&json=1&page_size=10`;
 
     const res = await fetch(url, {
       headers: { 'User-Agent': 'SmartHunt-EanEnricher/1.0 (contact@smarthunt.app)' },
