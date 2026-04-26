@@ -11,6 +11,8 @@
     "scrape:stores":   "npx tsx src/run.ts --stores",
     "scrape:openprices": "npx tsx src/run.ts --openprices",
     "scrape:lidl":     "npx tsx src/run.ts --lidl",
+    "enrich:eans":     "npx tsx src/enrich-eans.ts",
+    "enrich:eans:dry": "npx tsx src/enrich-eans.ts --dry-run",
     "bridge":          "tsx src/bridge.ts",
     "bridge:prod":     "API_URL=$API_URL INTERNAL_API_KEY=$INTERNAL_API_KEY tsx src/bridge.ts"
   },

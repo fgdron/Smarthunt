@@ -160,6 +160,53 @@ export async function internalRoutes(app: FastifyInstance) {
     return reply.status(200).send({ ok: true, upserted: stores.length });
   });
 
+  // ── GET /v1/internal/variants ──────────────────────────────────────────────
+  // Liste toutes les variantes avec id, ean, brand, name
+  app.get('/v1/internal/variants', async (_request, reply) => {
+    try {
+      const res = await app.pool.query<{ id: string; ean: string; brand: string; name: string }>(
+        'SELECT id, ean, brand, name FROM product_variants ORDER BY brand, name',
+      );
+      return reply.send({ variants: res.rows, total: res.rows.length });
+    } catch (err) {
+      return reply.status(500).send({ error: String(err) });
+    }
+  });
+
+  // ── POST /v1/internal/update-eans ──────────────────────────────────────────
+  // Met à jour les EANs des variantes (enrichissement OFF)
+  app.post('/v1/internal/update-eans', async (request, reply) => {
+    const body = request.body as { updates: Array<{ variantId: string; ean: string }> };
+    if (!body?.updates?.length) return reply.status(400).send({ error: 'updates required' });
+
+    const client = await app.pool.connect();
+    let updated = 0, skipped = 0;
+    try {
+      await client.query('BEGIN');
+      for (const { variantId, ean } of body.updates) {
+        // Vérifie que l'EAN n'est pas déjà utilisé par une autre variante
+        const conflict = await client.query(
+          'SELECT id FROM product_variants WHERE ean = $1 AND id != $2 LIMIT 1',
+          [ean, variantId],
+        );
+        if (conflict.rows.length > 0) { skipped++; continue; }
+
+        await client.query(
+          'UPDATE product_variants SET ean = $1, "updatedAt" = NOW() WHERE id = $2',
+          [ean, variantId],
+        );
+        updated++;
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      return reply.status(500).send({ error: String(err) });
+    } finally {
+      client.release();
+    }
+    return reply.send({ ok: true, updated, skipped });
+  });
+
   // ── GET /v1/internal/eans ──────────────────────────────────────────────────
   // Retourne tous les EANs du catalogue pour le scraper Open Prices
   app.get('/v1/internal/eans', async (_request, reply) => {
