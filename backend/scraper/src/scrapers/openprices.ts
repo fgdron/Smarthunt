@@ -92,44 +92,18 @@ async function fetchJSON<T>(url: string): Promise<T | null> {
 }
 
 /**
- * Détermine si une location Open Prices correspond à un magasin Nantes Métropole.
- * Retourne l'ID de notre magasin interne, ou null si hors périmètre.
+ * Identifie la chaîne d'une location Open Prices.
+ * Retourne 'leclerc' | 'carrefour' | 'lidl' | null
  */
-function matchNantesStore(location: OPPrice['location']): string | null {
+function detectChain(location: OPPrice['location']): 'leclerc' | 'carrefour' | 'lidl' | null {
   if (!location) return null;
-
-  const city  = (location.city  ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const name  = (location.name  ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const label = `${name} ${city}`;
-
-  // Vérifie que c'est bien dans Nantes Métropole
-  const isNantes = NANTES_CITIES.some(kw =>
-    kw.normalize('NFD').replace(/[\u0300-\u036f]/g, '') === city ||
-    label.includes(kw.normalize('NFD').replace(/[\u0300-\u036f]/g, '')),
-  );
-  if (!isNantes) return null;
-
-  // Identifie la chaîne
-  let chain: string | null = null;
+  const name = (location.name ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   for (const [keyword, chainName] of Object.entries(CHAIN_KEYWORDS)) {
-    if (label.includes(keyword)) { chain = chainName; break; }
+    if (name.includes(keyword.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) {
+      return chainName as 'leclerc' | 'carrefour' | 'lidl';
+    }
   }
-  if (!chain) return null;
-
-  // Trouve le magasin le plus proche géographiquement dans notre liste
-  // Fallback : prend le premier de la chaîne dans la ville
-  const cityNorm = city.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const candidates = NANTES_STORES.filter(s => s.chain === chain);
-
-  // Cherche d'abord par correspondance de ville dans l'ID du magasin
-  const cityMatch = candidates.find(s =>
-    s.id.includes(cityNorm.split(' ')[0]) ||
-    s.address.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(cityNorm),
-  );
-  if (cityMatch) return cityMatch.id;
-
-  // Fallback : premier magasin de la chaîne
-  return candidates[0]?.id ?? null;
+  return null;
 }
 
 /**
@@ -165,37 +139,69 @@ function extractPromo(item: OPPrice): Pick<StorePriceEntry, 'promoType'|'promoVa
 }
 
 /**
- * Cherche les prix d'un EAN dans Open Prices, filtre sur Nantes.
- * Ne retourne que les prix des 90 derniers jours (données fraîches).
+ * Cherche les prix d'un EAN dans Open Prices.
+ * Stratégie nationale : regroupe par chaîne (Leclerc/Carrefour/Lidl) et calcule
+ * la médiane France entière → assigne à tous nos magasins Nantes de cette chaîne.
+ *
+ * Justification MVP : les prix Leclerc/Carrefour/Lidl varient peu selon les régions
+ * sur les produits de grande marque (écart généralement < 5%). C'est une base réaliste
+ * en attendant que la communauté remonte des prix Nantes spécifiques.
  */
 async function fetchPricesForEan(ean: string): Promise<StorePriceEntry[]> {
   const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 90);
+  cutoff.setDate(cutoff.getDate() - 365); // 1 an max
   const dateMin = cutoff.toISOString().split('T')[0];
 
-  const url = `${BASE_URL}/prices?product_code=${ean}&country=en:france&date__gte=${dateMin}&page_size=50&order_by=-date`;
+  const url = `${BASE_URL}/prices?product_code=${ean}&date__gte=${dateMin}&page_size=100&order_by=-date`;
   const data = await fetchJSON<OPPricesResponse>(url);
   if (!data || data.items.length === 0) return [];
 
-  const entries: StorePriceEntry[] = [];
-  const seenStores = new Set<string>();
+  // Collecte les prix par chaîne
+  const pricesByChain: Record<string, number[]> = { leclerc: [], carrefour: [], lidl: [] };
+  const promoByChain:  Record<string, ReturnType<typeof extractPromo>> = {};
 
   for (const item of data.items) {
     if (!item.price || item.price <= 0 || item.price > 500) continue;
+    const chain = detectChain(item.location);
+    if (!chain) continue;
 
-    const storeId = matchNantesStore(item.location);
-    if (!storeId) continue;
-    if (seenStores.has(storeId)) continue; // déjà un prix pour ce magasin, prend le plus récent
-    seenStores.add(storeId);
+    pricesByChain[chain].push(item.price);
 
-    const promo = extractPromo(item);
-    entries.push({
-      ean,
-      storeId,
-      price:   item.price,
-      inStock: true,
-      ...(promo ?? {}),
-    });
+    // Conserve la première promo trouvée par chaîne
+    if (!promoByChain[chain]) {
+      const promo = extractPromo(item);
+      if (promo) promoByChain[chain] = promo;
+    }
+  }
+
+  // Calcule la médiane par chaîne
+  const median = (arr: number[]): number | null => {
+    if (arr.length === 0) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid    = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  };
+
+  const entries: StorePriceEntry[] = [];
+
+  for (const chain of ['leclerc', 'carrefour', 'lidl'] as const) {
+    const med = median(pricesByChain[chain]);
+    if (!med) continue;
+
+    const price = Math.round(med * 100) / 100;
+    const promo = promoByChain[chain] ?? null;
+
+    // Assigne à tous nos magasins Nantes de cette chaîne
+    const chainStores = NANTES_STORES.filter(s => s.chain === chain);
+    for (const store of chainStores) {
+      entries.push({
+        ean,
+        storeId: store.id,
+        price,
+        inStock: true,
+        ...(promo ?? {}),
+      });
+    }
   }
 
   return entries;
