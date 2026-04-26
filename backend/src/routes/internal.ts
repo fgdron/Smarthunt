@@ -102,6 +102,24 @@ const SeedStoresBodySchema = z.object({
   stores: z.array(StoreSchema).min(1),
 });
 
+// ── Scraper : upsert léger par EAN (sans recréer groupes/variantes) ──────────
+const StorePricePatchSchema = z.object({
+  ean:             z.string().min(8).max(14),
+  storeId:         z.string().min(1),
+  price:           z.number().positive(),
+  inStock:         z.boolean().default(true),
+  promoType:       z.enum(['percent', 'volume', 'immediate']).optional(),
+  promoValue:      z.number().positive().optional(),
+  promoLabel:      z.string().max(300).optional(),
+  promoValidUntil: z.string().datetime().optional(),
+});
+
+const UpsertStorePricesSchema = z.object({
+  source:  z.string().min(1),                             // ex: "openprices", "lidl"
+  storeId: z.string().min(1).optional(),                  // global storeId si tous les mêmes
+  prices:  z.array(StorePricePatchSchema).min(1).max(1000),
+});
+
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 export async function internalRoutes(app: FastifyInstance) {
@@ -285,6 +303,74 @@ export async function internalRoutes(app: FastifyInstance) {
       upsertedVariants,
       upsertedPrices,
       processedAt:     new Date().toISOString(),
+    });
+  });
+
+  // ── POST /v1/internal/upsert-store-prices ─────────────────────────────────
+  // Endpoint léger pour les scrapers quotidiens.
+  // Ne crée PAS de nouveaux produits — met à jour uniquement les variantes existantes.
+  app.post('/v1/internal/upsert-store-prices', async (request, reply) => {
+    const parseResult = UpsertStorePricesSchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.status(400).send({ error: 'Invalid payload', details: parseResult.error.flatten() });
+    }
+
+    const { source, prices } = parseResult.data;
+    let updated = 0, skipped = 0, promosSet = 0;
+
+    const client = await app.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      for (const item of prices) {
+        // 1. Trouve la variante par EAN
+        const varRes = await client.query<{ id: string }>(
+          'SELECT id FROM product_variants WHERE ean = $1 LIMIT 1',
+          [item.ean],
+        );
+        if (varRes.rows.length === 0) { skipped++; continue; }
+        const variantId = varRes.rows[0].id;
+
+        // 2. Upsert store price
+        await client.query(
+          `INSERT INTO store_prices (id, "variantId", "storeId", price, "inStock", "updatedAt")
+           VALUES (gen_random_uuid()::text, $1, $2, $3, $4, NOW())
+           ON CONFLICT ("variantId", "storeId") DO UPDATE SET
+             price      = EXCLUDED.price,
+             "inStock"  = EXCLUDED."inStock",
+             "updatedAt" = NOW()`,
+          [variantId, item.storeId, item.price, item.inStock],
+        );
+        updated++;
+
+        // 3. Upsert promo si fournie
+        if (item.promoType && item.promoValue && item.promoLabel) {
+          await client.query(
+            `DELETE FROM catalogue_promos WHERE "variantId" = $1 AND store = $2`,
+            [variantId, item.storeId],
+          );
+          await client.query(
+            `INSERT INTO catalogue_promos
+               (id, "variantId", type, value, label, store, "validUntil", "createdAt", "updatedAt")
+             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+            [variantId, item.promoType, item.promoValue, item.promoLabel,
+             item.storeId, item.promoValidUntil ? new Date(item.promoValidUntil) : null],
+          );
+          promosSet++;
+        }
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      return reply.status(500).send({ error: String(err) });
+    } finally {
+      client.release();
+    }
+
+    return reply.status(200).send({
+      ok: true, source, updated, skipped, promosSet,
+      processedAt: new Date().toISOString(),
     });
   });
 

@@ -1,0 +1,71 @@
+name: SmartHunt — Scraper Nantes Métropole
+
+on:
+  # ── Quotidien 2h du matin heure Paris (UTC+2 en été) ──
+  schedule:
+    - cron: '0 0 * * *'   # 02h00 Paris (UTC+2 été / UTC+1 hiver)
+
+  # ── Hebdomadaire lundi 3h (tracts de la semaine) ──
+  # Déclenché séparément pour éviter doublon le lundi
+  # (le daily du lundi suffit — les tracts sont dans Open Prices le lundi matin)
+
+  # ── Déclenchement manuel depuis GitHub ──
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Mode de scraping'
+        required: true
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - openprices
+          - lidl
+          - stores
+
+env:
+  API_URL:           ${{ secrets.SMARTHUNT_API_URL }}
+  INTERNAL_API_KEY:  ${{ secrets.SMARTHUNT_API_KEY }}
+  NODE_VERSION:      '20'
+
+jobs:
+  scrape:
+    name: Scrape (${{ github.event.inputs.mode || 'daily' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # ── Checkout ────────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Node.js ──────────────────────────────────────────────────────────────
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/scraper/package-lock.json
+
+      # ── Install deps ─────────────────────────────────────────────────────────
+      - name: Install scraper dependencies
+        working-directory: backend/scraper
+        run: npm ci
+
+      # ── Run scraper ──────────────────────────────────────────────────────────
+      - name: Run scraper
+        working-directory: backend/scraper
+        run: |
+          MODE="${{ github.event.inputs.mode || 'daily' }}"
+          echo "Mode: $MODE"
+          npx tsx src/run.ts --$MODE
+        env:
+          API_URL:          ${{ secrets.SMARTHUNT_API_URL }}
+          INTERNAL_API_KEY: ${{ secrets.SMARTHUNT_API_KEY }}
+
+      # ── Notification en cas d'échec ──────────────────────────────────────────
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Le scraper SmartHunt a échoué — vérifier les logs ci-dessus"
+          echo "::error::API_URL: $API_URL (clé: ${INTERNAL_API_KEY:0:4}...)"

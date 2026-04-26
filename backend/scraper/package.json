@@ -1,12 +1,18 @@
 {
   "name": "smarthunt-scraper",
-  "version": "1.0.0",
-  "description": "Bridge d'ingestion initiale + scraper futur",
+  "version": "2.0.0",
+  "description": "Scrapers quotidiens Nantes Métropole — Leclerc, Carrefour, Lidl",
   "private": true,
   "type": "module",
   "scripts": {
-    "bridge": "tsx src/bridge.ts",
-    "bridge:prod": "API_URL=$API_URL INTERNAL_API_KEY=$INTERNAL_API_KEY tsx src/bridge.ts"
+    "scrape":          "npx tsx src/run.ts --daily",
+    "scrape:daily":    "npx tsx src/run.ts --daily",
+    "scrape:weekly":   "npx tsx src/run.ts --weekly",
+    "scrape:stores":   "npx tsx src/run.ts --stores",
+    "scrape:openprices": "npx tsx src/run.ts --openprices",
+    "scrape:lidl":     "npx tsx src/run.ts --lidl",
+    "bridge":          "tsx src/bridge.ts",
+    "bridge:prod":     "API_URL=$API_URL INTERNAL_API_KEY=$INTERNAL_API_KEY tsx src/bridge.ts"
   },
   "devDependencies": {
     "@types/node": "^20.14.2",
