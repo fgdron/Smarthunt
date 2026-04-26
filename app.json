@@ -35,6 +35,7 @@
       "expo-camera",
       "expo-image-picker"
     ],
+    "newArchEnabled": true,
     "experiments": {
       "typedRoutes": true
     }

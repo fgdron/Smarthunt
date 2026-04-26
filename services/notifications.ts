@@ -14,9 +14,11 @@ export function initNotificationsHandler(): void {
   if (Platform.OS === 'web') return;
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
+      shouldShowAlert:  true,
+      shouldPlaySound:  true,
+      shouldSetBadge:   true,
+      shouldShowBanner: true,
+      shouldShowList:   true,
     }),
   });
 }

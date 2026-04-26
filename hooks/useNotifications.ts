@@ -19,14 +19,18 @@ export function useNotifications(): void {
   // Init handler + permission (une seule fois)
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    initNotificationsHandler();
-    requestPermissionIfNeeded();
+    try {
+      initNotificationsHandler();
+      requestPermissionIfNeeded();
+    } catch { /* notifications non supportées dans Expo Go SDK 53 */ }
   }, []);
 
   // Maintenir le rappel quotidien à jour
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    const activeCount = huntList.filter(i => !i.cashbackClaimed).length;
-    scheduleDailyRecap(activeCount);
+    try {
+      const activeCount = huntList.filter(i => !i.cashbackClaimed).length;
+      scheduleDailyRecap(activeCount);
+    } catch { /* silencieux */ }
   }, [huntList.length]);
 }
