@@ -15,6 +15,7 @@ import { storesRoutes }    from './routes/stores.js';
 import { internalRoutes }  from './routes/internal.js';
 import { communityRoutes } from './routes/community.js';
 import { adminRoutes }     from './routes/admin.js';
+import { basketRoutes }    from './routes/basket.js';
 
 // ─── Fastify pool decorator ───────────────────────────────────────────────────
 
@@ -85,6 +86,7 @@ async function buildApp(): Promise<FastifyInstance> {
   await app.register(internalRoutes);
   await app.register(communityRoutes);
   await app.register(adminRoutes);
+  await app.register(basketRoutes);
 
   // ── Health check ──────────────────────────────────────────────────────────
   app.get('/health', async () => ({

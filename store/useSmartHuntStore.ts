@@ -1,4 +1,14 @@
 import { create } from 'zustand';
+
+// ─── Type partagé ParsedProduct (résultat Claude Vision) ─────────────────────
+export interface ParsedProduct {
+  name:        string;
+  brand:       string;
+  quantity:    number;
+  unit_price:  number;
+  total_price: number;
+  unit:        string;
+}
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Optimization, MOCK_OPTIMIZATIONS } from '@/data/mockData';
 import { ProductGroup, ProductVariant, SegmentType, StoreId, findProductGroup, setLiveProductsDB } from '@/data/productsDB';
@@ -58,6 +68,11 @@ interface SmartHuntState {
 
   // Nouveau panier catalogue
   userBasket: BasketItem[];
+
+  // ── Basket Optimizer (nouvelle vision) ───────────────────────────────────
+  importedBasket: ParsedProduct[];
+  setImportedBasket: (products: ParsedProduct[]) => void;
+  clearImportedBasket: () => void;
 
   // Session active (IDs produits sélectionnés) et Liste Type sauvegardée
   currentSession: string[];
@@ -158,6 +173,7 @@ export const useSmartHuntStore = create<SmartHuntState>((set, get) => ({
   hasShopmium: null,
   userName: 'Alex',
   userBasket: [],
+  importedBasket: [],
   currentSession: [],
   savedListType: [],
   savedLists: [],
@@ -282,6 +298,10 @@ export const useSmartHuntStore = create<SmartHuntState>((set, get) => ({
     get().userBasket.find(i => i.groupId === groupId)?.qty ?? 1,
 
   clearBasket: () => set({ userBasket: [] }),
+
+  // ── Basket Optimizer ─────────────────────────────────────────────────────
+  setImportedBasket:   (products) => set({ importedBasket: products }),
+  clearImportedBasket: () => set({ importedBasket: [] }),
 
   // ── Session / Liste Type ─────────────────────────────────
 
